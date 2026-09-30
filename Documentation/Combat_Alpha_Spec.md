@@ -3,9 +3,13 @@
 ## 流れ（Play）
 
 1. **機体選択**（A / B / C）— Canvas Prefab `UnitSelectHud`
-2. 選んだ `RobotPrefab` をスポーン（**ステータスはプレハブのまま**）
+2. 選んだ `RobotPrefab` をスポーン
 3. 端と端で 1v1 vs NPC（敵は機体 B）
 4. コア撃破 or タイムオーバーで勝敗
+
+関連ドキュメント:
+- 移動: `Documentation/UnitB_Motor_Spec.md`
+- 試合フロー指示（ポーズ / 終了二択 / 敵機体選択）: `Documentation/Match_Flow_Task.md`
 
 シーン: `TestField` — `CombatAlphaBootstrap` が自動配線（**追加メニューなし**）。
 
@@ -25,8 +29,6 @@
 
 ## UI（Canvas Prefab）
 
-コードで UI を組まない。Editor 起動時に無ければ自動生成。以降は Prefab を編集。
-
 | Prefab | パス | Binder |
 |--------|------|--------|
 | 機体選択 | `Assets/UI/Prefabs/UnitSelectHud.prefab` | `UnitSelectBinder` |
@@ -40,8 +42,8 @@
 
 ## 入力
 
-Input System + `IUnitInputSource` 分離済み。NPC は `NpcChaseBrain`。  
-A/B/C の移動ステータスはα配線で変更しない。
+NPC は `NpcChaseBrain`。  
+A/B/C の移動ステータスはα配線
 
 ---
 

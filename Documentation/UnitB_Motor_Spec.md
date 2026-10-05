@@ -1,8 +1,11 @@
 # 機体移動ベース仕様（Unit B → A / C 改造用）
 
 対象スクリプト: `Assets/Scripts/Player/UnitBMotor.cs`  
-対象HUD: `Assets/Scripts/UI/FuelGaugeHud.cs`  
-テストシーン: `Assets/Scenes/TestField.unity`
+入力: `Assets/Scripts/Player/UnitPlayerInput.cs` / `UnitInputFrame.cs`  
+Input Actions: `Assets/Input/UnitControls`（Resources からもロード）  
+対象HUD: `Assets/Scripts/UI/FuelGaugeHud.cs`（Canvas Prefab `Assets/UI/Prefabs/FuelHud.prefab` をバインド）  
+テストシーン: `Assets/Scenes/TestField.unity`  
+戦闘α: `Documentation/Combat_Alpha_Spec.md`
 
 このドキュメントは **機体 B（平均・頑強）を完成ベース** にし、他メンバーが **機体 A（俊敏）／機体 C（力強）** に数値・挙動を振り分けやすくするための短い仕様です。
 
@@ -20,18 +23,21 @@
 
 ---
 
-## 2. 操作
+## 2. 操作（Input System）
 
-| 入力 | 動作 | 消費燃料 |
-|------|------|----------|
-| WASD | 移動 | なし |
-| マウス | 視点 | なし |
-| Space（接地） | ジャンプ | **Jump Boost**（`jumpFuelCost`） |
-| Space（空中・長押し） | 浮上／ホバー | **Jump Boost**（`hoverFuelPerSecond`） |
-| Left Shift（長押し） | ダッシュ（ジェット） | **Dash Jet**（`dashFuelPerSecond`） |
-| Esc | カーソルロック切替 | なし |
+入力は **Unity Input System**。`UnitBMotor` は `Input.*` を読まず、`IUnitInputSource`（既定: `UnitPlayerInput`）から受け取る。
+
+| Action | Keyboard&Mouse | Gamepad | 動作 | 消費燃料 |
+|--------|----------------|---------|------|----------|
+| Move | WASD | 左スティック | 移動 | なし |
+| Look | Mouse delta | 右スティック | 視点 | なし |
+| Jump | Space | South | 接地ジャンプ / 空中ホバー | **Jump Boost** |
+| Dash | Left Shift | LB | ダッシュ | **Dash Jet** |
+| ToggleCursor | Esc | Start | カーソルロック切替 | なし |
 
 見た目のジェットパック演出は後回し（仕様どおり見た目は変えなくてよい）。
+
+NPC / 2P は同じ `IUnitInputSource` を差し替えればよい（機体ステータスは触らない）。
 
 ---
 

@@ -1,15 +1,18 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Robogee.Player
 {
     /// <summary>
     /// Unit B baseline FPS motor (sturdy / D.Mon-inspired).
     /// Dual fuel: Jump Boost (jump + hover) / Dash Jet (horizontal jet).
+    /// Input is supplied by <see cref="IUnitInputSource"/> (Input System / AI) — never read here.
     /// Duplicate this component (or prefab) and retune Inspector values for Unit A / C.
     /// See Documentation/UnitB_Motor_Spec.md
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
+    [RequireComponent(typeof(UnitPlayerInput))]
     public class UnitBMotor : MonoBehaviour
     {
         [Serializable]
@@ -74,9 +77,12 @@ namespace Robogee.Player
 
         [Header("References")]
         [SerializeField] Transform cameraPivot;
+        [Tooltip("Optional. Defaults to UnitPlayerInput on this object. Swap for NPC / P2 drivers.")]
+        [SerializeField] MonoBehaviour inputSourceBehaviour;
 
         [Header("Look")]
-        [SerializeField] float mouseSensitivity = 2f;
+        [FormerlySerializedAs("mouseSensitivity")]
+        [SerializeField] float lookSensitivity = 2f;
         [SerializeField] float minPitch = -80f;
         [SerializeField] float maxPitch = 80f;
         [SerializeField] bool lockCursorOnStart = true;
@@ -119,7 +125,6 @@ namespace Robogee.Player
         [SerializeField] float hoverArmDelay = 0.08f;
 
         [Header("Dash / Jet Drive (Dash Jet fuel)")]
-        [SerializeField] KeyCode dashKey = KeyCode.LeftShift;
         [SerializeField] float dashSpeed = 11f;
         [SerializeField] float dashFuelPerSecond = 35f;
         [SerializeField] bool allowAirDash = true;
@@ -151,6 +156,7 @@ namespace Robogee.Player
         [SerializeField] bool showFuelOverlay = false;
 
         CharacterController _controller;
+        IUnitInputSource _input;
         float _pitch;
         float _verticalVelocity;
         Vector3 _horizontalVelocity;
@@ -177,6 +183,7 @@ namespace Robogee.Player
                     cameraPivot = cam.transform;
             }
 
+            ResolveInputSource();
             jumpBoostFuel.Clamp();
             dashJetFuel.Clamp();
         }
@@ -186,30 +193,52 @@ namespace Robogee.Player
             SetCursorLock(lockCursorOnStart);
         }
 
+        void ResolveInputSource()
+        {
+            if (inputSourceBehaviour is IUnitInputSource typed)
+            {
+                _input = typed;
+                return;
+            }
+
+            var human = GetComponent<UnitPlayerInput>();
+            if (human == null)
+                human = gameObject.AddComponent<UnitPlayerInput>();
+            _input = human;
+            inputSourceBehaviour = human;
+        }
+
+        /// <summary>Swap driver at runtime (e.g. hand off to NPC).</summary>
+        public void SetInputSource(IUnitInputSource source)
+        {
+            _input = source;
+            inputSourceBehaviour = source as MonoBehaviour;
+        }
+
         void Update()
         {
             float dt = Time.deltaTime;
+            UnitInputFrame frame = _input != null ? _input.Current : default;
 
-            if (Input.GetKeyDown(KeyCode.Escape))
+            if (frame.ToggleCursorPressed)
                 SetCursorLock(!_cursorLocked);
 
             if (_cursorLocked)
-                ApplyLook();
+                ApplyLook(frame);
 
             bool grounded = _controller.isGrounded;
             if (grounded)
-            {
                 _airborneTime = 0f;
-            }
             else
-            {
                 _airborneTime += dt;
-            }
 
-            Vector3 moveInput = ReadMoveInput();
-            HandleJump(grounded);
-            HandleHover(grounded, dt);
-            HandleDash(moveInput, dt);
+            Vector3 moveInput = frame.MovePlanar;
+            if (moveInput.sqrMagnitude > 1f)
+                moveInput.Normalize();
+
+            HandleJump(grounded, frame);
+            HandleHover(grounded, dt, frame);
+            HandleDash(moveInput, dt, frame);
             IntegrateMovement(moveInput, grounded, dt);
 
             if (!_isHovering)
@@ -236,35 +265,25 @@ namespace Robogee.Player
                 _isHovering ? "Hover: ON" : (_isDashing ? "Dash: ON" : "Idle"));
         }
 
-        static Vector3 ReadMoveInput()
+        void ApplyLook(UnitInputFrame frame)
         {
-            float x = Input.GetAxisRaw("Horizontal");
-            float z = Input.GetAxisRaw("Vertical");
-            var input = new Vector3(x, 0f, z);
-            if (input.sqrMagnitude > 1f)
-                input.Normalize();
-            return input;
-        }
+            float lookX = frame.LookX * lookSensitivity;
+            float lookY = frame.LookY * lookSensitivity;
 
-        void ApplyLook()
-        {
-            float mouseX = Input.GetAxisRaw("Mouse X") * mouseSensitivity;
-            float mouseY = Input.GetAxisRaw("Mouse Y") * mouseSensitivity;
-
-            transform.Rotate(0f, mouseX * turnResponsiveness, 0f);
+            transform.Rotate(0f, lookX * turnResponsiveness, 0f);
 
             if (cameraPivot == null)
                 return;
 
-            _pitch = Mathf.Clamp(_pitch - mouseY, minPitch, maxPitch);
+            _pitch = Mathf.Clamp(_pitch - lookY, minPitch, maxPitch);
             cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 
-        void HandleJump(bool grounded)
+        void HandleJump(bool grounded, UnitInputFrame frame)
         {
             if (!grounded)
                 return;
-            if (!Input.GetButtonDown("Jump"))
+            if (!frame.JumpPressed)
                 return;
 
             if (requireJumpFuel)
@@ -281,7 +300,7 @@ namespace Robogee.Player
             _airborneTime = 0f;
         }
 
-        void HandleHover(bool grounded, float dt)
+        void HandleHover(bool grounded, float dt, UnitInputFrame frame)
         {
             _isHovering = false;
 
@@ -289,7 +308,7 @@ namespace Robogee.Player
                 return;
             if (_airborneTime < hoverArmDelay)
                 return;
-            if (!Input.GetButton("Jump"))
+            if (!frame.JumpHeld)
                 return;
 
             jumpBoostFuel.SpendUpTo(hoverFuelPerSecond, dt, out float spent);
@@ -298,18 +317,17 @@ namespace Robogee.Player
 
             _isHovering = true;
 
-            // Blend toward ascend speed (Valkyrie-like hold-to-rise).
             _verticalVelocity = Mathf.MoveTowards(
                 _verticalVelocity,
                 hoverAscendSpeed,
                 hoverVerticalAcceleration * dt);
         }
 
-        void HandleDash(Vector3 moveInput, float dt)
+        void HandleDash(Vector3 moveInput, float dt, UnitInputFrame frame)
         {
             _isDashing = false;
 
-            if (!Input.GetKey(dashKey))
+            if (!frame.DashHeld)
                 return;
             if (!allowAirDash && !_controller.isGrounded)
                 return;
@@ -371,7 +389,6 @@ namespace Robogee.Player
             }
             else if (_isHovering && hoverGravityScale > 0f && _verticalVelocity < hoverAscendSpeed)
             {
-                // Mild residual gravity while approaching ascend speed keeps feel grounded.
                 _verticalVelocity += gravity * hoverGravityScale * dt;
             }
 

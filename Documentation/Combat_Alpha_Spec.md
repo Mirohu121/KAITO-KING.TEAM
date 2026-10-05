@@ -11,7 +11,9 @@
 - 移動: `Documentation/UnitB_Motor_Spec.md`
 - 試合フロー指示（ポーズ / 終了二択 / 敵機体選択）: `Documentation/Match_Flow_Task.md`
 
-シーン: `TestField` — `CombatAlphaBootstrap` が自動配線（**追加メニューなし**）。
+シーン: `TestField` — `CombatAlphaBootstrap` が自動配線（**追加メニューなし**）。  
+テスト地形: ProBuilder の砂漠荒野仮マップ（`DesertArena`）。再生成は Unity メニュー `Robogee/Setup/Build Desert Arena (ProBuilder)`。  
+※ 試合フロー指示（`Match_Flow_Task.md` / Miwa の Pause）とは独立。地形だけ差し替え。
 
 ---
 

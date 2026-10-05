@@ -12,6 +12,7 @@ namespace Robogee.EditorTools
     /// <summary>
     /// URP pipeline + TestField scene with UnitBMotor.
     /// Menu: Robogee/Setup/Apply URP And Rebuild Test Field
+    /// Also rebuilds DesertArena (ProBuilder) and Gaikotu playable/WASD wiring.
     /// Batch: -executeMethod Robogee.EditorTools.RobogeeProjectSetup.ApplyFromBatch
     /// </summary>
     public static class RobogeeProjectSetup
@@ -32,9 +33,12 @@ namespace Robogee.EditorTools
             CreateUrpAssets();
             AssignPipeline();
             RebuildTestFieldScene();
+            // Extend this SAME setup button — do not add new Robogee menus.
+            DesertArenaProBuilderEnsure.RebuildNow();
+            GaikotuPlayableEnsure.RebuildNow();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
-            Debug.Log("[Robogee] URP + TestField + UnitBMotor setup complete.");
+            Debug.Log("[Robogee] URP + TestField + DesertArena + Gaikotu setup complete.");
         }
 
         static void CreateUrpAssets()

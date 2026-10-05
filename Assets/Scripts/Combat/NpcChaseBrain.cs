@@ -78,9 +78,12 @@ namespace Robogee.Combat
             to.y = 0f;
             float dist = to.magnitude;
 
-            // Snap face — α readability over realism.
+            // Snap face — yaw only so the skeleton never tilts.
             if (dist > 0.05f)
-                transform.rotation = Quaternion.LookRotation(to.normalized, Vector3.up);
+            {
+                float yaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
+                transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+            }
 
             if (Time.time >= _nextStrafeFlip)
             {

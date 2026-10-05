@@ -15,9 +15,11 @@ namespace Robogee.EditorTools
         const string FuelPath = "Assets/UI/Prefabs/FuelHud.prefab";
         const string MatchPath = "Assets/UI/Prefabs/MatchHud.prefab";
         const string SelectPath = "Assets/UI/Prefabs/UnitSelectHud.prefab";
+        const string LockOnPath = "Assets/UI/Prefabs/LockOnHud.prefab";
         const string FuelResourcePath = "Assets/Resources/UI/FuelHud.prefab";
         const string MatchResourcePath = "Assets/Resources/UI/MatchHud.prefab";
         const string SelectResourcePath = "Assets/Resources/UI/UnitSelectHud.prefab";
+        const string LockOnResourcePath = "Assets/Resources/UI/LockOnHud.prefab";
 
         static UiPrefabAutoEnsure()
         {
@@ -68,9 +70,25 @@ namespace Robogee.EditorTools
                 Object.DestroyImmediate(select);
             }
 
+            // Rebuild LockOn marker HUD when style changes.
+            if (!EditorPrefs.GetBool("Robogee.LockOnHud.v2", false))
+            {
+                AssetDatabase.DeleteAsset(LockOnPath);
+                AssetDatabase.DeleteAsset(LockOnResourcePath);
+                EditorPrefs.SetBool("Robogee.LockOnHud.v2", true);
+            }
+
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(LockOnPath) == null)
+            {
+                var lockOn = BuildLockOnHud();
+                SavePrefab(lockOn, LockOnPath);
+                Object.DestroyImmediate(lockOn);
+            }
+
             CopyPrefab(FuelPath, FuelResourcePath);
             CopyPrefab(MatchPath, MatchResourcePath);
             CopyPrefab(SelectPath, SelectResourcePath);
+            CopyPrefab(LockOnPath, LockOnResourcePath);
 
             // Runtime-loadable copies of A/B/C (stats untouched — file copy only).
             CopyPrefab("Assets/RobotPrefab/Player_UnitA_Cube.prefab", "Assets/Resources/RobotPrefab/UnitA.prefab");
@@ -202,6 +220,38 @@ namespace Robogee.EditorTools
             CreateLabel(root.transform, "HintText", "選んで 1v1 開始", 42, TextAnchor.MiddleCenter,
                 new Vector2(0.15f, 0.10f), new Vector2(0.85f, 0.24f), Vector2.zero, Vector2.zero);
 
+            return root;
+        }
+
+        static GameObject BuildLockOnHud()
+        {
+            var root = CreateCanvas("LockOnHudCanvas", 70);
+            var cg = root.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+            cg.blocksRaycasts = false;
+            cg.interactable = false;
+
+            // Diamond marker above locked enemy.
+            var reticle = CreateImage(root.transform, "Reticle", new Color(1f, 0.2f, 0.15f, 0.95f));
+            var rt = reticle.rectTransform;
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(22f, 22f);
+            rt.localEulerAngles = new Vector3(0f, 0f, 45f);
+
+            var rim = CreateImage(reticle.transform, "Rim", new Color(1f, 0.85f, 0.2f, 1f));
+            Stretch(rim.rectTransform, new Vector2(0.12f, 0.12f), new Vector2(0.88f, 0.88f));
+
+            var core = CreateImage(reticle.transform, "Core", new Color(0.05f, 0.05f, 0.05f, 0.75f));
+            Stretch(core.rectTransform, new Vector2(0.28f, 0.28f), new Vector2(0.72f, 0.72f));
+
+            // Arrow under diamond, points at the target below.
+            var label = CreateLabel(reticle.transform, "LockLabel", "▼", 26, TextAnchor.MiddleCenter,
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(-16f, -34f), new Vector2(16f, -6f));
+            label.color = new Color(1f, 0.85f, 0.2f, 1f);
+            label.rectTransform.localEulerAngles = new Vector3(0f, 0f, -45f); // un-rotate from parent diamond
             return root;
         }
 

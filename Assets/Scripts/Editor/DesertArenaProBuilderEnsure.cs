@@ -27,6 +27,24 @@ namespace Robogee.EditorTools
             EditorApplication.delayCall += TryBuildIfNeeded;
         }
 
+        /// <summary>Called from existing RobogeeProjectSetup button — no new menu.</summary>
+        public static void RebuildNow()
+        {
+            if (!File.Exists(ScenePath))
+            {
+                Debug.LogError("[DesertArena] Missing " + ScenePath);
+                return;
+            }
+
+            var scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid() || scene.path != ScenePath)
+                EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+
+            BuildIntoOpenScene();
+            EditorPrefs.SetBool(PrefKey, true);
+            Debug.Log("[DesertArena] Rebuilt into TestField.");
+        }
+
         static void OnSceneOpened(Scene scene, OpenSceneMode mode)
         {
             if (scene.path == ScenePath)
@@ -50,32 +68,6 @@ namespace Robogee.EditorTools
 
             BuildIntoOpenScene();
             EditorPrefs.SetBool(PrefKey, true);
-        }
-
-        [MenuItem("Robogee/Setup/Build Desert Arena (ProBuilder)")]
-        public static void BuildMenu()
-        {
-            if (!EnsureTestFieldOpen())
-                return;
-            BuildIntoOpenScene();
-            EditorPrefs.SetBool(PrefKey, true);
-            Debug.Log("[DesertArena] Built desert wilderness prototype (ProBuilder).");
-        }
-
-        static bool EnsureTestFieldOpen()
-        {
-            var scene = SceneManager.GetActiveScene();
-            if (scene.IsValid() && scene.path == ScenePath)
-                return true;
-
-            if (!File.Exists(ScenePath))
-            {
-                Debug.LogError("[DesertArena] Missing " + ScenePath);
-                return false;
-            }
-
-            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            return true;
         }
 
         static void BuildIntoOpenScene()

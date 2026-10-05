@@ -117,8 +117,12 @@ namespace Robogee.Combat
             if (playerGo.GetComponent<UnitMeleeAttack>() == null)
                 playerGo.AddComponent<UnitMeleeAttack>();
 
+            var lockOn = playerGo.GetComponent<UnitLockOn>();
+            if (lockOn == null)
+                lockOn = playerGo.AddComponent<UnitLockOn>();
+
             var enemyCore = SpawnCpu(enemyUnit, ePos, enemyCoreHp);
-            enemyCore.transform.LookAt(new Vector3(pPos.x, ePos.y, pPos.z));
+            FaceYawOnly(enemyCore.transform, pPos);
 
             var systems = GameObject.Find("CombatSystems");
             if (systems == null)
@@ -133,6 +137,11 @@ namespace Robogee.Combat
             if (hud == null)
                 hud = systems.AddComponent<MatchHudBinder>();
             hud.Bind(match, playerCore, enemyCore);
+
+            var lockHud = systems.GetComponent<LockOnHudBinder>();
+            if (lockHud == null)
+                lockHud = systems.AddComponent<LockOnHudBinder>();
+            lockHud.Bind(lockOn);
 
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
@@ -150,9 +159,185 @@ namespace Robogee.Combat
             go.name = asPlayer ? $"Player_Unit{id}" : $"CPU_Enemy_Unit{id}";
             go.SetActive(true);
             go.transform.position = position;
-            go.transform.rotation = Quaternion.LookRotation(lookForward, Vector3.up);
+            FaceYawOnly(go.transform, go.transform.position + lookForward);
             go.transform.localScale = Vector3.one;
+            EnsurePlayableComponents(go, asPlayer);
             return go;
+        }
+
+        static void FaceYawOnly(Transform t, Vector3 worldTarget)
+        {
+            if (t == null)
+                return;
+            Vector3 flat = worldTarget - t.position;
+            flat.y = 0f;
+            if (flat.sqrMagnitude < 0.0001f)
+                return;
+            t.rotation = Quaternion.LookRotation(flat.normalized, Vector3.up);
+            // Kill any import / LookAt pitch-roll so skeletons stand upright.
+            Vector3 e = t.eulerAngles;
+            t.rotation = Quaternion.Euler(0f, e.y, 0f);
+        }
+
+        /// <summary>
+        /// Makes sure gaikotu (or any visual prefab) has motor / input / move-anim wiring.
+        /// Does not alter RobotPrefab cube stats assets.
+        /// </summary>
+        static void EnsurePlayableComponents(GameObject go, bool asPlayer)
+        {
+            if (go.GetComponent<CharacterController>() == null)
+            {
+                var cc = go.AddComponent<CharacterController>();
+                cc.height = 1.8f;
+                cc.radius = 0.35f;
+                cc.center = new Vector3(0f, 0.9f, 0f);
+                cc.skinWidth = 0.08f;
+            }
+
+            if (go.GetComponent<UnitPlayerInput>() == null)
+                go.AddComponent<UnitPlayerInput>();
+            if (go.GetComponent<UnitBMotor>() == null)
+                go.AddComponent<UnitBMotor>();
+            if (go.GetComponent<UnitMoveAnimator>() == null)
+                go.AddComponent<UnitMoveAnimator>();
+
+            if (asPlayer)
+            {
+                if (go.GetComponent<FuelGaugeHud>() == null)
+                    go.AddComponent<FuelGaugeHud>();
+                EnsurePlayerCamera(go);
+            }
+        }
+
+        static void EnsurePlayerCamera(GameObject go)
+        {
+            var motor = go.GetComponent<UnitBMotor>();
+
+            Transform pivot = null;
+            foreach (var t in go.GetComponentsInChildren<Transform>(true))
+            {
+                if (t.name != "CameraPivot")
+                    continue;
+                pivot = t;
+                break;
+            }
+
+            if (pivot == null)
+                pivot = new GameObject("CameraPivot").transform;
+
+            pivot.SetParent(go.transform, false);
+            float bodyH = MeasureLocalHeight(go);
+            // Camera was inside torso looking at sky — raise to crown and push forward.
+            float eyeY = Mathf.Clamp(bodyH * 0.95f, 1.55f, 2.35f);
+            pivot.localPosition = new Vector3(0f, eyeY, 0.55f);
+            pivot.localRotation = Quaternion.identity;
+            pivot.localScale = Vector3.one;
+
+            Transform camTf = null;
+            for (int i = 0; i < pivot.childCount; i++)
+            {
+                if (pivot.GetChild(i).name == "PlayerCamera")
+                {
+                    camTf = pivot.GetChild(i);
+                    break;
+                }
+            }
+
+            Camera cam = camTf != null ? camTf.GetComponent<Camera>() : null;
+            if (cam == null)
+            {
+                var camGo = camTf != null ? camTf.gameObject : new GameObject("PlayerCamera");
+                if (camTf == null)
+                    camGo.transform.SetParent(pivot, false);
+                cam = camGo.GetComponent<Camera>() ?? camGo.AddComponent<Camera>();
+                if (camGo.GetComponent<AudioListener>() == null)
+                    camGo.AddComponent<AudioListener>();
+                camTf = camGo.transform;
+            }
+
+            camTf.localPosition = Vector3.zero;
+            camTf.localRotation = Quaternion.identity;
+            camTf.localScale = Vector3.one;
+            cam.enabled = true;
+            cam.gameObject.SetActive(true);
+            cam.tag = "MainCamera";
+            cam.nearClipPlane = 0.05f;
+            cam.farClipPlane = 200f;
+            cam.fieldOfView = 75f;
+            cam.clearFlags = CameraClearFlags.Skybox;
+            cam.targetDisplay = 0;
+
+            // Hide own mesh from FPS camera.
+            int hideLayer = ResolvePlayerHideLayer();
+            SetLayerRecursively(go.transform, hideLayer);
+            SetLayerRecursively(pivot, 0);
+            cam.cullingMask = ~(1 << hideLayer);
+
+            foreach (var other in Object.FindObjectsByType<Camera>(FindObjectsSortMode.None))
+            {
+                if (other == null || other == cam)
+                    continue;
+                if (other.transform.IsChildOf(go.transform))
+                    continue;
+                other.enabled = false;
+                if (other.CompareTag("MainCamera"))
+                    other.tag = "Untagged";
+            }
+
+            var cc = go.GetComponent<CharacterController>();
+            if (cc != null)
+            {
+                float h = Mathf.Clamp(bodyH, 1.4f, 3.0f);
+                cc.height = h;
+                cc.radius = Mathf.Clamp(h * 0.15f, 0.25f, 0.45f);
+                cc.center = new Vector3(0f, h * 0.5f, 0f);
+            }
+
+            if (motor != null)
+            {
+                motor.RebindCameraPivot();
+                motor.ResetLook();
+            }
+
+            var follow = go.GetComponent<FpsHeadCameraFollow>();
+            if (follow == null)
+                follow = go.AddComponent<FpsHeadCameraFollow>();
+            follow.Bind(pivot, null);
+
+            // Slightly tighter FOV so distant foes don't look oversized from eye height.
+            cam.fieldOfView = 70f;
+        }
+
+        static int ResolvePlayerHideLayer()
+        {
+            int layer = LayerMask.NameToLayer("Player");
+            return layer >= 0 ? layer : 31;
+        }
+
+        static void SetLayerRecursively(Transform root, int layer)
+        {
+            if (root == null)
+                return;
+            root.gameObject.layer = layer;
+            for (int i = 0; i < root.childCount; i++)
+                SetLayerRecursively(root.GetChild(i), layer);
+        }
+
+        static float MeasureLocalHeight(GameObject go)
+        {
+            var rends = go.GetComponentsInChildren<Renderer>();
+            if (rends == null || rends.Length == 0)
+                return 1.8f;
+
+            Bounds b = rends[0].bounds;
+            for (int i = 1; i < rends.Length; i++)
+            {
+                if (rends[i] != null)
+                    b.Encapsulate(rends[i].bounds);
+            }
+
+            float h = b.max.y - go.transform.position.y;
+            return h > 0.2f ? h : 1.8f;
         }
 
         static CombatantCore SpawnCpu(UnitId id, Vector3 position, float hp)

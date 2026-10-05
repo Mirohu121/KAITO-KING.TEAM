@@ -182,8 +182,27 @@ namespace Robogee.Combat
     /// <summary>Loads A/B/C robot prefabs without modifying their tuned stats.</summary>
     public static class UnitPrefabCatalog
     {
+        /// <summary>Temporary: spawn gaikotu skeleton instead of A/B/C cubes.</summary>
+        public const bool UseGaikotuPlaceholder = true;
+
         public static GameObject Load(UnitId id)
         {
+            if (UseGaikotuPlaceholder)
+            {
+                var gaikotu = Resources.Load<GameObject>("Gaikotu/gaikotu_playable");
+                if (gaikotu != null)
+                    return gaikotu;
+#if UNITY_EDITOR
+                var editorGaikotu = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Resources/Gaikotu/gaikotu_playable.prefab");
+                if (editorGaikotu != null)
+                    return editorGaikotu;
+                var rig = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/gaikotu_rig.prefab");
+                if (rig != null)
+                    return rig;
+#endif
+            }
+
             string resourceName = id switch
             {
                 UnitId.A => "RobotPrefab/UnitA",

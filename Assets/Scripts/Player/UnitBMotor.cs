@@ -86,6 +86,8 @@ namespace Robogee.Player
         [SerializeField] float minPitch = -80f;
         [SerializeField] float maxPitch = 80f;
         [SerializeField] bool lockCursorOnStart = true;
+        [Tooltip("How quickly yaw/pitch catch a lock-on target.")]
+        [SerializeField] float lockOnTurnSpeed = 14f;
 
         [Header("Weight / Ground Feel (tune per unit)")]
         [Tooltip("Top walking speed.")]
@@ -157,6 +159,7 @@ namespace Robogee.Player
 
         CharacterController _controller;
         IUnitInputSource _input;
+        IAimLockProvider _aimLock;
         float _pitch;
         float _verticalVelocity;
         Vector3 _horizontalVelocity;
@@ -172,6 +175,8 @@ namespace Robogee.Player
         public bool IsDashing => _isDashing;
         public bool IsHovering => _isHovering;
         public bool IsGrounded => _controller != null && _controller.isGrounded;
+        public Vector3 PlanarVelocity => new Vector3(_horizontalVelocity.x, 0f, _horizontalVelocity.z);
+        public float PlanarSpeed => PlanarVelocity.magnitude;
 
         void Awake()
         {
@@ -184,12 +189,28 @@ namespace Robogee.Player
             }
 
             ResolveInputSource();
+            ResolveAimLock();
             jumpBoostFuel.Clamp();
             dashJetFuel.Clamp();
         }
 
+        void ResolveAimLock()
+        {
+            _aimLock = null;
+            var behaviours = GetComponents<MonoBehaviour>();
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                if (behaviours[i] is IAimLockProvider provider)
+                {
+                    _aimLock = provider;
+                    return;
+                }
+            }
+        }
+
         void Start()
         {
+            ResolveAimLock();
             SetCursorLock(lockCursorOnStart);
         }
 
@@ -213,6 +234,29 @@ namespace Robogee.Player
         {
             _input = source;
             inputSourceBehaviour = source as MonoBehaviour;
+        }
+
+        /// <summary>Re-find CameraPivot after late-spawned visuals (e.g. gaikotu).</summary>
+        public void RebindCameraPivot()
+        {
+            var found = transform.Find("CameraPivot");
+            if (found != null)
+            {
+                cameraPivot = found;
+                return;
+            }
+
+            var cam = GetComponentInChildren<Camera>();
+            if (cam != null)
+                cameraPivot = cam.transform.parent != null ? cam.transform.parent : cam.transform;
+        }
+
+        /// <summary>Level the view (pitch 0) — call after spawn so we don't start sky-gazing.</summary>
+        public void ResetLook()
+        {
+            _pitch = 0f;
+            if (cameraPivot != null)
+                cameraPivot.localRotation = Quaternion.identity;
         }
 
         void Update()
@@ -267,6 +311,15 @@ namespace Robogee.Player
 
         void ApplyLook(UnitInputFrame frame)
         {
+            if (_aimLock == null)
+                ResolveAimLock();
+
+            if (_aimLock != null && _aimLock.TryGetLockedAimPoint(out Vector3 aimPoint))
+            {
+                ApplyLockLook(aimPoint);
+                return;
+            }
+
             float lookX = frame.LookX * lookSensitivity;
             float lookY = frame.LookY * lookSensitivity;
 
@@ -276,6 +329,32 @@ namespace Robogee.Player
                 return;
 
             _pitch = Mathf.Clamp(_pitch - lookY, minPitch, maxPitch);
+            cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+        }
+
+        void ApplyLockLook(Vector3 aimPoint)
+        {
+            Vector3 eye = cameraPivot != null
+                ? cameraPivot.position
+                : transform.position + Vector3.up * 0.25f;
+            Vector3 to = aimPoint - eye;
+            if (to.sqrMagnitude < 0.0001f)
+                return;
+
+            float dt = Time.deltaTime;
+            float t = 1f - Mathf.Exp(-lockOnTurnSpeed * dt);
+
+            float targetYaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
+            float yaw = Mathf.LerpAngle(transform.eulerAngles.y, targetYaw, t);
+            transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+
+            if (cameraPivot == null)
+                return;
+
+            Vector3 local = Quaternion.Inverse(transform.rotation) * to;
+            float targetPitch = -Mathf.Atan2(local.y, local.z) * Mathf.Rad2Deg;
+            targetPitch = Mathf.Clamp(targetPitch, minPitch, maxPitch);
+            _pitch = Mathf.Lerp(_pitch, targetPitch, t);
             cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 

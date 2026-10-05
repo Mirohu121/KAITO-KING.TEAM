@@ -14,6 +14,7 @@ namespace Robogee.Player
         public bool DashHeld;
         public bool ToggleCursorPressed;
         public bool AttackPressed;
+        public bool LockOnPressed;
 
         public UnityEngine.Vector3 MovePlanar => new UnityEngine.Vector3(MoveX, 0f, MoveY);
     }
@@ -24,5 +25,11 @@ namespace Robogee.Player
     public interface IUnitInputSource
     {
         UnitInputFrame Current { get; }
+    }
+
+    /// <summary>Optional aim override (e.g. lock-on). Implemented outside the motor.</summary>
+    public interface IAimLockProvider
+    {
+        bool TryGetLockedAimPoint(out UnityEngine.Vector3 worldPoint);
     }
 }

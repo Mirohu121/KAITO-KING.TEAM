@@ -19,8 +19,6 @@ public class Pause : MonoBehaviour
     {
 
     }
-
-    // InputAxtion -> InputAction Ç…èCê≥
     public void OnPause(InputAction.CallbackContext context)
     {
         if (context.performed) // Check if the pause action was performed

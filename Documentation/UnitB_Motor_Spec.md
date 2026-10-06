@@ -11,33 +11,34 @@ Input Actions: `Assets/Input/UnitControls`（Resources からもロード）
 
 ---
 
-## 1. コンセプト
+## 1. コンセプト（地上スライド）
+
+αの手触り方針: **し放題ホバーではなく、重さのある地上機＋スライドブースト**。
 
 | 機体 | 役割 | 手触りの方向 |
 |------|------|----------------|
-| **B（現行）** | 盾剣・平均性能 | やや重い加速、安定した空中、標準ダッシュ |
-| **A** | 俊敏・射撃寄り | 速い移動・高い空中制御・ダッシュ強め／火力は後工程 |
-| **C** | 力強・部位破壊寄り | 遅い移動・重いジャンプ／ホバー弱め・一撃は後工程 |
+| **B（現行）** | 盾剣・平均 | 加速遅め、滑って止まる、スライドは燃料食い |
+| **A** | 俊敏・射撃寄り | 歩き速め、スライド加速↑／消費↓、空中制御やや↑ |
+| **C** | 力強 | 歩き遅め、ブレーキ弱め（惰性）、スライド短く重い |
 
-コードを最初から分けず、**B の Prefab / Component を複製して Inspector を変える**運用を推奨します。
+コードを分けず、**B の Component を複製して Inspector を変える**運用。
 
 ---
 
 ## 2. 操作（Input System）
 
-入力は **Unity Input System**。`UnitBMotor` は `Input.*` を読まず、`IUnitInputSource`（既定: `UnitPlayerInput`）から受け取る。
+`UnitBMotor` は `Input.*` を読まず、`IUnitInputSource`（既定: `UnitPlayerInput`）から受け取る。
 
 | Action | Keyboard&Mouse | Gamepad | 動作 | 消費燃料 |
 |--------|----------------|---------|------|----------|
-| Move | WASD | 左スティック | 移動 | なし |
+| Move | WASD | 左スティック | 歩き（慣性あり） | なし |
 | Look | Mouse delta | 右スティック | 視点 | なし |
-| Jump | Space | South | 接地ジャンプ / 空中ホバー | **Jump Boost** |
-| Dash | Left Shift | LB | ダッシュ | **Dash Jet** |
+| Jump | Space | South | 接地ジャンプのみ（ホバー既定OFF） | **Jump Boost** |
+| Dash | Left Shift | LB | **スライドブースト**（押し込み加速、即時セット速度ではない） | **Dash Jet** |
 | ToggleCursor | Esc | Start | カーソルロック切替 | なし |
+| LockOn | Q / 右クリック | RB | ロックオン（別コンポーネント） | なし |
 
-見た目のジェットパック演出は後回し（仕様どおり見た目は変えなくてよい）。
-
-NPC / 2P は同じ `IUnitInputSource` を差し替えればよい（機体ステータスは触らない）。
+NPC / 2P は同じ `IUnitInputSource`。
 
 ---
 
@@ -45,107 +46,69 @@ NPC / 2P は同じ `IUnitInputSource` を差し替えればよい（機体ステ
 
 | タンク | 用途 | HUD |
 |--------|------|-----|
-| **Jump Boost**（橙） | ジャンプ初速コスト ＋ 空中ホバー | 左ゲージ「ブースト」 |
-| **Dash Jet**（水色） | 水平ダッシュ | 左ゲージ「ジェット」 |
+| **Jump Boost**（橙） | ジャンプ初速コスト（ホバーはオプション） | 左ゲージ「ブースト」 |
+| **Dash Jet**（水色） | スライドブースト | 左ゲージ「ジェット」 |
 
-共通パラメータ（各 `FuelTank`）:
-
-- `max` … 最大量  
-- `current` … 現在量  
-- `regenPerSecond` … 回復速度  
-- `regenDelay` … 消費後、回復開始までの待ち  
-
-ホバー中は Jump Boost は回復しない。ダッシュ中は Dash Jet は回復しない。
+- 消費後 `regenDelay` 待ってから回復  
+- スライド枯渇時は追加で `slideEmptyExtraDelay` ぶん回復開始が遅れる  
+- 点火に `slideIgniteCost`（空タップ連打防止）
 
 ---
 
-## 4. Inspector で触る項目（改造の本体）
+## 4. Inspector（改造の本体）
 
-### Weight / Ground Feel
-- `maxSpeed` … 最高速度  
-- `acceleration` … 加速（低いほど重い）  
-- `deceleration` … 減速  
-- `turnResponsiveness` … 視点ヨーの追従  
+### Weight / Ground Walk
+- `maxWalkSpeed` … 歩き最高速  
+- `walkAcceleration` … 加速（低いほど重い）  
+- `coastFriction` … スティック離し時の惰性摩擦（低いほど滑る）  
+- `brakeFriction` … 逆入力時のブレーキ  
+- `turnResponsiveness` … 視点ヨー（スライド中はさらに鈍る）
 
-### Air Feel
-- `airControl` … 空中の左右制御  
-- `gravity` … 重力（負の値）  
-- `hoverMoveSpeedScale` … ホバー中の水平速度倍率  
+### Air
+- `airControl` … 空中操舵（αは低め）  
+- `gravity` … 重力（負）
 
 ### Jump
-- `jumpHeight`  
-- `jumpFuelCost`  
-- `requireJumpFuel`  
+- `jumpHeight` / `jumpFuelCost` / `requireJumpFuel`  
+- `enableHover` … **α既定 false**（地上戦）
 
-### Hover / Jetpack
-- `enableHover`  
-- `hoverFuelPerSecond`  
-- `hoverAscendSpeed` … 長押し中の上昇速度目標  
-- `hoverVerticalAcceleration` … そこに追いつく速さ  
-- `hoverGravityScale` … ホバー中に残す重力感  
-- `hoverArmDelay` … ジャンプ直後にホバー可能になるまでの猶予  
-
-### Dash / Jet
-- `dashKey`  
-- `dashSpeed`  
-- `dashFuelPerSecond`  
-- `allowAirDash`  
-- `boostUpWhileDash` / `dashUpSpeed`  
+### Slide Boost (Dash Jet)
+- `slideMaxSpeed` … スライド時の目標最高速  
+- `slideAcceleration` … 押し込み加速（スナップしない）  
+- `slideFriction` … スライド中の軽いドラッグ  
+- `slideFuelPerSecond` / `slideIgniteCost`  
+- `allowAirSlide` … **α既定 false**  
+- `slideSteer` … スライド中のスティック操舵（0＝レール）  
+- `slideEmptyExtraDelay` … 枯渇後の回復ペナルティ
 
 ---
 
-## 5. A / C への振り分け例（初期提案）
+## 5. A / C への振り分け例
 
-数値はたたき台。プレイしてから詰める。
+### 機体 A（俊敏）
+- `maxWalkSpeed` ↑、`walkAcceleration` ↑  
+- `slideMaxSpeed` ↑、`slideAcceleration` ↑、`slideFuelPerSecond` やや↓  
+- `slideSteer` ↑、`airControl` やや↑  
 
-### 機体 A（俊敏）目安
-- `maxSpeed` ↑（例: 8〜9）  
-- `acceleration` / `deceleration` ↑  
-- `airControl` ↑（例: 0.55〜0.7）  
-- `turnResponsiveness` ↑  
-- `dashSpeed` ↑、`dashFuelPerSecond` やや↓（長く飛べる）  
-- `jumpHeight` やや↑  
-- `hoverAscendSpeed` ↑、`hoverFuelPerSecond` やや↓  
-
-### 機体 C（力強）目安
-- `maxSpeed` ↓（例: 4.5〜5.5）  
-- `acceleration` / `deceleration` ↓（重い）  
-- `airControl` ↓  
-- `turnResponsiveness` ↓  
-- `dashSpeed` ↓ か短時間高消費  
-- `jumpHeight` 普通〜やや低  
-- `hoverAscendSpeed` ↓、`hoverFuelPerSecond` ↑（ホバーは苦手）  
-
-戦闘（盾・剣・ガトリング／部位破壊）は移動とは別コンポーネントで追加予定。
+### 機体 C（力強）
+- `maxWalkSpeed` ↓、`walkAcceleration` ↓、`coastFriction` ↓（惰性大）  
+- `slideMaxSpeed` 普通、`slideFuelPerSecond` ↑（すぐ枯れる）  
+- `jumpFuelCost` ↑、`turnResponsiveness` ↓  
 
 ---
 
-## 6. 改造手順（推奨）
-
-1. `Player_UnitB_Cube` を Prefab 化（または複製）  
-2. 名前を `Player_UnitA` / `Player_UnitC` に  
-3. 同じ `UnitBMotor` のまま Inspector だけ変更  
-   - 後で差分が大きくなったら `UnitAMotor` へリネーム／継承でも可  
-4. `FuelGaugeHud` はそのまま流用（燃料参照は `UnitBMotor` 前提）  
-5. 変更したプリセット値をこの仕様書の表に追記して共有  
-
----
-
-## 7. 公開プロパティ（UI / 他システム用）
+## 6. 公開プロパティ（UI / 他）
 
 - `JumpBoostFuelNormalized` / `DashJetFuelNormalized`  
-- `IsHovering` / `IsDashing`  
+- `IsHovering` / `IsDashing`（スライド中も `IsDashing`）  
 - `IsJumpBoostActive` / `IsDashJetActive`  
-- `IsGrounded`  
+- `IsGrounded` / `PlanarVelocity` / `PlanarSpeed`  
+- `ResetLook` / `RebindCameraPivot` / `SetInputSource`
 
 ---
 
-## 8. まだやらないこと（スコープ外）
+## 7. まだやらないこと
 
-- 盾・剣・ガトリング  
-- 部位破壊  
-- 物資争奪  
-- 本ステージ（火星マップ）  
-- ネット同期  
+- 盾・剣・ガトリング / 部位破壊 / 物資 / 本ステージ / ネット同期  
 
 移動の手触りが固まってから戦闘へ進む。

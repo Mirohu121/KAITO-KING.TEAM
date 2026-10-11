@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
 
 public class PauseManager : MonoBehaviour
 {
@@ -36,5 +37,15 @@ public class PauseManager : MonoBehaviour
         Time.timeScale = 1f; // Resume the game by setting time scale to 1
         isPaused = false; // Set the pause state to false
     }
+
+    public void ReturnToSelect()
+    {
+        Time.timeScale = 1f;
+
+        Scene currentScene = SceneManager.GetActiveScene();
+
+        SceneManager.LoadScene(currentScene.name);
+    }
+
 }
 

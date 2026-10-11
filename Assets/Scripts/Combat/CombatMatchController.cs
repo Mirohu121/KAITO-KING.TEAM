@@ -12,6 +12,11 @@ namespace Robogee.Combat
         [SerializeField] float matchDurationSeconds = 180f;
         [SerializeField] bool freezeTimeOnEnd = true;
 
+        //＃追記＃試合終了後のUI表示用のカメラを入れる
+        //Finish()に処理を追加
+        [SerializeField] private Camera resultCamera;
+
+
         float _timeLeft;
         bool _ended;
         string _result;
@@ -94,6 +99,9 @@ namespace Robogee.Combat
             _timeLeft = Mathf.Max(0f, _timeLeft);
             if (freezeTimeOnEnd)
                 Time.timeScale = 0.2f;
+            //追記：試合終了後のUI表示用のカメラを有効化する
+            if (resultCamera != null)
+                resultCamera.gameObject.SetActive(true);
         }
 
         void OnDestroy()

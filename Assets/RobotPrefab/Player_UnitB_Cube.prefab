@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 2095017718683788463}
   - component: {fileID: 7266345069431985497}
   - component: {fileID: 865690452384968530}
+  - component: {fileID: 2291111678741507056}
   m_Layer: 0
   m_Name: Player_UnitB_Cube
   m_TagString: Untagged
@@ -132,7 +133,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Robogee.Player.UnitBMotor
   cameraPivot: {fileID: 5485715054934977262}
-  mouseSensitivity: 2
+  inputSourceBehaviour: {fileID: 0}
+  lookSensitivity: 2
   minPitch: -80
   maxPitch: 80
   lockCursorOnStart: 1
@@ -153,7 +155,6 @@ MonoBehaviour:
   hoverVerticalAcceleration: 18
   hoverGravityScale: 0.15
   hoverArmDelay: 0.08
-  dashKey: 304
   dashSpeed: 12
   dashFuelPerSecond: 35
   allowAirDash: 1
@@ -184,17 +185,31 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Robogee.Player.FuelGaugeHud
   motor: {fileID: 0}
-  buildOnAwake: 1
-  anchorMin: {x: 0.02, y: 0.32}
-  anchorMax: {x: 0.1, y: 0.68}
+  hudPrefab: {fileID: 0}
+  instantiateIfMissing: 1
+  boostFillImage: {fileID: 0}
+  jetFillImage: {fileID: 0}
+  boostStatus: {fileID: 0}
+  jetStatus: {fileID: 0}
   boostFill: {r: 0.95, g: 0.55, b: 0.12, a: 0.95}
   jetFill: {r: 0.25, g: 0.78, b: 0.92, a: 0.95}
-  trackColor: {r: 0.08, g: 0.09, b: 0.11, a: 0.72}
-  frameColor: {r: 0.75, g: 0.78, b: 0.82, a: 0.55}
   labelColor: {r: 0.92, g: 0.93, b: 0.95, a: 0.95}
   activeColor: {r: 1, g: 0.85, b: 0.35, a: 1}
-  barWidth: 18
-  tickCount: 8
+--- !u!114 &2291111678741507056
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5157264635161897955}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e7f8a9b0c1d24e3f8a9b0c1d2e3f4a5b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Robogee.Player.UnitPlayerInput
+  actions: {fileID: 0}
+  actionMapName: Gameplay
+  enableActions: 1
 --- !u!1 &6117041201284311347
 GameObject:
   m_ObjectHideFlags: 0
@@ -206,6 +221,7 @@ GameObject:
   - component: {fileID: 7167687987103893156}
   - component: {fileID: 8718176309110366836}
   - component: {fileID: 3391276741091431386}
+  - component: {fileID: 4127076356956634474}
   m_Layer: 0
   m_Name: PlayerCamera
   m_TagString: MainCamera
@@ -287,6 +303,50 @@ AudioListener:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6117041201284311347}
   m_Enabled: 1
+--- !u!114 &4127076356956634474
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6117041201284311347}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1 &7359669008646653752
 GameObject:
   m_ObjectHideFlags: 0

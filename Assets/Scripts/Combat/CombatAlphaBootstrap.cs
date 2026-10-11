@@ -36,6 +36,8 @@ namespace Robogee.Combat
 
         void Awake()
         {
+            Debug.Log("[CombatAlpha] Awake called");
+
             Hide("Marker_N");
             Hide("Marker_E");
             Hide("Marker_W");

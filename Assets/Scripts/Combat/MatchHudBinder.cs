@@ -23,6 +23,11 @@ namespace Robogee.Combat
 
         GameObject _instance;
 
+        //追記
+        GameObject matchInfoGroup;
+
+        [SerializeField] GameObject fuelHud;
+
         public void Bind(CombatMatchController matchController, CombatantCore player, CombatantCore enemy)
         {
             match = matchController;
@@ -137,6 +142,14 @@ namespace Robogee.Combat
                 if (show)
                     resultText.text = match.ResultText;
             }
+
+            //追記: MatchInfoGroupとfuelHudの表示/非表示を制御
+            if (match != null)
+            {
+                matchInfoGroup?.SetActive(!match.HasEnded);
+                fuelHud?.SetActive(!match.HasEnded);
+            }
+
         }
 
         void EnsureInstance()
@@ -169,6 +182,14 @@ namespace Robogee.Combat
         void TryAutoWire()
         {
             Transform root = _instance != null ? _instance.transform : transform;
+
+            //追記: MatchInfoGroupを探す
+            if (matchInfoGroup == null)
+            {
+                Transform group = root.Find("MatchInfoGroup");
+                if (group != null) matchInfoGroup = group.gameObject;
+            }
+
             if (playerHpFill == null)
                 playerHpFill = FindDeep<Image>(root, "PlayerHpFill");
             if (enemyHpFill == null)

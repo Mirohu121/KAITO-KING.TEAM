@@ -31,6 +31,7 @@ namespace Robogee.Combat
 
         public void Show(Action<UnitId> onPicked)
         {
+
             _onPicked = onPicked;
             _picked = false;
             EnsureInstance();

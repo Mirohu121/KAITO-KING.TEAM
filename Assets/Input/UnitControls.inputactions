@@ -1,4 +1,5 @@
 {
+    "version": 1,
     "name": "UnitControls",
     "maps": [
         {
@@ -63,6 +64,15 @@
                     "name": "LockOn",
                     "type": "Button",
                     "id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "Pause",
+                    "type": "Button",
+                    "id": "e13eafbe-67c9-4c7d-a5ee-5534d736a983",
                     "expectedControlType": "Button",
                     "processors": "",
                     "interactions": "",
@@ -276,6 +286,17 @@
                     "processors": "",
                     "groups": "Gamepad",
                     "action": "LockOn",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "19e44565-4b78-4224-9a7e-7f7c469a9fba",
+                    "path": "<Keyboard>/escape",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "Pause",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

@@ -22,6 +22,15 @@ namespace Robogee.Combat
             lockOn = source;
             EnsureInstance();
             TryAutoWire();
+            if (_instance != null)
+                _instance.SetActive(true);
+        }
+
+        public void HideForSelect()
+        {
+            lockOn = null;
+            if (_instance != null)
+                _instance.SetActive(false);
         }
 
         void Awake()

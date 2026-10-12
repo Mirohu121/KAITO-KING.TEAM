@@ -6,7 +6,7 @@ namespace Robogee.Combat
 {
     /// <summary>
     /// Binds match state to a Canvas Prefab.
-    /// Child names: PlayerHpFill, EnemyHpFill, TimerText, ResultText
+    /// Child names: PlayerHpFill, EnemyHpFill, TimerText, ResultText, RetryButton (optional)
     /// </summary>
     public class MatchHudBinder : MonoBehaviour
     {
@@ -20,6 +20,7 @@ namespace Robogee.Combat
         [SerializeField] Image enemyHpFill;
         [SerializeField] Text timerText;
         [SerializeField] Text resultText;
+        [SerializeField] Button retryButton;
 
         GameObject _instance;
 
@@ -27,6 +28,7 @@ namespace Robogee.Combat
         GameObject matchInfoGroup;
 
         [SerializeField] GameObject fuelHud;
+        bool _retryWired;
 
         public void Bind(CombatMatchController matchController, CombatantCore player, CombatantCore enemy)
         {
@@ -35,9 +37,27 @@ namespace Robogee.Combat
             enemyCore = enemy;
             EnsureInstance();
             TryAutoWire();
+            EnsureRetryButton();
             PrepareHp(playerHpFill, new Color(0.3f, 0.85f, 0.4f, 0.95f), fromLeft: true);
             PrepareHp(enemyHpFill, new Color(0.95f, 0.35f, 0.3f, 0.95f), fromLeft: false);
             ApplyReadableStyle();
+            if (_instance != null)
+                _instance.SetActive(true);
+            if (retryButton != null)
+                retryButton.gameObject.SetActive(false);
+        }
+
+        public void HideForSelect()
+        {
+            if (retryButton != null)
+                retryButton.gameObject.SetActive(false);
+            if (resultText != null)
+                resultText.gameObject.SetActive(false);
+            if (_instance != null)
+                _instance.SetActive(false);
+            match = null;
+            playerCore = null;
+            enemyCore = null;
         }
 
         void Awake()
@@ -143,6 +163,9 @@ namespace Robogee.Combat
                     resultText.text = match.ResultText;
             }
 
+            if (retryButton != null && match != null)
+                retryButton.gameObject.SetActive(match.HasEnded);
+
             //追記: MatchInfoGroupとfuelHudの表示/非表示を制御
             if (match != null)
             {
@@ -150,6 +173,59 @@ namespace Robogee.Combat
                 fuelHud?.SetActive(!match.HasEnded);
             }
 
+        }
+
+        void EnsureRetryButton()
+        {
+            Transform root = _instance != null ? _instance.transform : transform;
+            if (retryButton == null)
+                retryButton = FindDeep<Button>(root, "RetryButton");
+
+            if (retryButton == null && root != null)
+            {
+                var go = new GameObject("RetryButton", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+                go.transform.SetParent(root, false);
+                var rt = go.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0.35f, 0.18f);
+                rt.anchorMax = new Vector2(0.65f, 0.28f);
+                rt.offsetMin = Vector2.zero;
+                rt.offsetMax = Vector2.zero;
+                var img = go.GetComponent<Image>();
+                img.sprite = FuelGaugeHud.WhiteSprite();
+                img.color = new Color(0.15f, 0.55f, 0.95f, 0.92f);
+                retryButton = go.GetComponent<Button>();
+
+                var labelGo = new GameObject("Label", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                labelGo.transform.SetParent(go.transform, false);
+                var lrt = labelGo.GetComponent<RectTransform>();
+                lrt.anchorMin = Vector2.zero;
+                lrt.anchorMax = Vector2.one;
+                lrt.offsetMin = Vector2.zero;
+                lrt.offsetMax = Vector2.zero;
+                var label = labelGo.GetComponent<Text>();
+                label.text = "リトライ";
+                label.alignment = TextAnchor.MiddleCenter;
+                label.fontSize = 42;
+                label.color = Color.white;
+                label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                if (label.font == null)
+                    label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+
+            if (retryButton == null || _retryWired)
+                return;
+
+            retryButton.onClick.RemoveAllListeners();
+            retryButton.onClick.AddListener(OnRetryClicked);
+            _retryWired = true;
+            retryButton.gameObject.SetActive(false);
+        }
+
+        void OnRetryClicked()
+        {
+            var boot = FindFirstObjectByType<CombatAlphaBootstrap>();
+            if (boot != null)
+                boot.RestartToUnitSelect();
         }
 
         void EnsureInstance()

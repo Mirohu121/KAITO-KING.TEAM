@@ -41,10 +41,41 @@ namespace Robogee.Combat
             _ended = false;
             _result = null;
             _timeLeft = matchDurationSeconds;
+            ResolveResultCamera();
+            SetResultCameraActive(false);
             if (player != null)
                 player.Died += OnDied;
             if (enemy != null)
                 enemy.Died += OnDied;
+        }
+
+        /// <summary>Clear match state so unit select can run again without a full scene reload.</summary>
+        public void ResetForSelect()
+        {
+            Unbind();
+            player = null;
+            enemy = null;
+            _ended = false;
+            _result = null;
+            _timeLeft = matchDurationSeconds;
+            SetResultCameraActive(false);
+            Time.timeScale = 1f;
+        }
+
+        void ResolveResultCamera()
+        {
+            if (resultCamera != null)
+                return;
+            var go = GameObject.Find("ResultCamera");
+            if (go != null)
+                resultCamera = go.GetComponent<Camera>();
+        }
+
+        void SetResultCameraActive(bool active)
+        {
+            ResolveResultCamera();
+            if (resultCamera != null)
+                resultCamera.gameObject.SetActive(active);
         }
 
         void OnDisable() => Unbind();
@@ -103,8 +134,7 @@ namespace Robogee.Combat
             FuelGaugeHud.HideAll();
 
             //追記：試合終了後のUI表示用のカメラを有効化する
-            if (resultCamera != null)
-                resultCamera.gameObject.SetActive(true);
+            SetResultCameraActive(true);
         }
 
         void OnDestroy()

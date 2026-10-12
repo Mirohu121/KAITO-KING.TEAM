@@ -5,9 +5,9 @@ using UnityEngine.Serialization;
 namespace Robogee.Player
 {
     /// <summary>
-    /// Grounded mech motor: weighty walk + slide boost (not free hover-jet).
-    /// Input via <see cref="IUnitInputSource"/> only (Input System / AI).
-    /// Tune Inspector for Unit A / B / C — same component, different numbers.
+    /// Grounded MS motor inspired by 戦場の絆 feel:
+    /// heavy walk, boost dash with post-boost lag, jump with landing stun, EN overheat.
+    /// Input via <see cref="IUnitInputSource"/> only.
     /// See Documentation/UnitB_Motor_Spec.md
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
@@ -66,7 +66,6 @@ namespace Robogee.Player
                 current = Mathf.Clamp(current, 0f, max);
             }
 
-            /// <summary>Push regen start further out without changing Inspector delay.</summary>
             public void PunishRegen(float extraSeconds)
             {
                 if (extraSeconds <= 0f)
@@ -87,72 +86,78 @@ namespace Robogee.Player
         [SerializeField] bool lockCursorOnStart = true;
         [SerializeField] float lockOnTurnSpeed = 14f;
 
-        [Header("Weight / Ground Walk")]
+        [Header("Weight / Walk (絆: レバー歩き)")]
         [FormerlySerializedAs("maxSpeed")]
-        [SerializeField] float maxWalkSpeed = 5.2f;
+        [SerializeField] float maxWalkSpeed = 4.6f;
         [FormerlySerializedAs("acceleration")]
-        [Tooltip("How hard you push toward walk speed. Lower = heavier.")]
-        [SerializeField] float walkAcceleration = 14f;
+        [SerializeField] float walkAcceleration = 11f;
         [FormerlySerializedAs("deceleration")]
-        [Tooltip("Friction when no move input (coast). Lower = slides longer.")]
-        [SerializeField] float coastFriction = 6f;
-        [Tooltip("Extra stop force when pushing opposite to velocity (brake).")]
-        [SerializeField] float brakeFriction = 18f;
-        [SerializeField] [Range(0.05f, 1f)] float turnResponsiveness = 0.55f;
+        [SerializeField] float coastFriction = 8f;
+        [SerializeField] float brakeFriction = 16f;
+        [SerializeField] [Range(0.05f, 1f)] float turnResponsiveness = 0.5f;
 
         [Header("Air")]
-        [SerializeField] [Range(0f, 1f)] float airControl = 0.2f;
-        [SerializeField] float gravity = -26f;
-        [SerializeField] float groundedStickForce = -2f;
+        [SerializeField] [Range(0f, 1f)] float airControl = 0.18f;
+        [SerializeField] float gravity = -28f;
+        [SerializeField] float groundedStickForce = -2.5f;
 
-        [Header("Jump (limited)")]
-        [SerializeField] float jumpHeight = 0.95f;
-        [SerializeField] float jumpFuelCost = 28f;
+        [Header("Jump + Landing Stun (絆: 着地硬直)")]
+        [SerializeField] float jumpHeight = 1.15f;
+        [SerializeField] float jumpFuelCost = 22f;
         [SerializeField] bool requireJumpFuel = true;
-        [Tooltip("α grounded combat: keep hover off.")]
         [SerializeField] bool enableHover = false;
         [SerializeField] float hoverFuelPerSecond = 40f;
         [SerializeField] float hoverAscendSpeed = 2.2f;
         [SerializeField] float hoverVerticalAcceleration = 10f;
         [SerializeField] float hoverGravityScale = 0.35f;
         [SerializeField] float hoverArmDelay = 0.1f;
+        [Tooltip("Seconds of reduced control after landing.")]
+        [SerializeField] float landingStunSeconds = 0.32f;
+        [SerializeField] [Range(0f, 1f)] float landingMoveScale = 0.25f;
 
-        [Header("Slide Boost (Dash Jet)")]
+        [Header("Boost Dash (絆: 右ペダル / EN)")]
         [FormerlySerializedAs("dashSpeed")]
-        [Tooltip("Top speed while slide-boosting.")]
-        [SerializeField] float slideMaxSpeed = 12f;
-        [Tooltip("How hard boost pushes (not an instant set).")]
-        [SerializeField] float slideAcceleration = 38f;
-        [Tooltip("Ground friction during slide (low = ice/skid).")]
-        [SerializeField] float slideFriction = 1.2f;
+        [FormerlySerializedAs("slideMaxSpeed")]
+        [SerializeField] float boostMaxSpeed = 11.5f;
+        [FormerlySerializedAs("slideAcceleration")]
+        [SerializeField] float boostAcceleration = 42f;
+        [FormerlySerializedAs("slideFriction")]
+        [SerializeField] float boostFriction = 2.5f;
         [FormerlySerializedAs("dashFuelPerSecond")]
-        [SerializeField] float slideFuelPerSecond = 42f;
-        [Tooltip("Minimum fuel to ignite a slide.")]
-        [SerializeField] float slideIgniteCost = 8f;
+        [FormerlySerializedAs("slideFuelPerSecond")]
+        [SerializeField] float boostFuelPerSecond = 38f;
+        [FormerlySerializedAs("slideIgniteCost")]
+        [SerializeField] float boostIgniteCost = 6f;
         [FormerlySerializedAs("allowAirDash")]
-        [SerializeField] bool allowAirSlide = false;
-        [Tooltip("How much stick can steer while sliding (0 = rail).")]
-        [SerializeField] [Range(0f, 1f)] float slideSteer = 0.35f;
-        [SerializeField] bool slideForwardWhenNoInput = true;
-        [Tooltip("After fuel empty, extra wait before jet regen.")]
-        [SerializeField] float slideEmptyExtraDelay = 0.6f;
+        [FormerlySerializedAs("allowAirSlide")]
+        [SerializeField] bool allowAirBoost = false;
+        [FormerlySerializedAs("slideSteer")]
+        [SerializeField] [Range(0f, 1f)] float boostSteer = 0.28f;
+        [FormerlySerializedAs("slideForwardWhenNoInput")]
+        [SerializeField] bool boostForwardWhenNoInput = true;
+        [Tooltip("隙 after releasing boost (cannot re-boost).")]
+        [SerializeField] float boostRecoverySeconds = 0.38f;
+        [Tooltip("Overheat lock when EN hits empty.")]
+        [SerializeField] float boostOverheatSeconds = 1.45f;
+        [FormerlySerializedAs("slideEmptyExtraDelay")]
+        [SerializeField] float boostEmptyExtraDelay = 0.5f;
 
         [Header("Fuel - Jump Boost")]
         [SerializeField] FuelTank jumpBoostFuel = new FuelTank
         {
             max = 100f,
             current = 100f,
-            regenPerSecond = 10f,
-            regenDelay = 1.1f
+            regenPerSecond = 11f,
+            regenDelay = 0.85f
         };
 
-        [Header("Fuel - Dash Jet")]
+        [Header("Fuel - Dash Jet (Boost EN)")]
         [SerializeField] FuelTank dashJetFuel = new FuelTank
         {
             max = 100f,
             current = 100f,
-            regenPerSecond = 12f,
-            regenDelay = 0.9f
+            regenPerSecond = 14f,
+            regenDelay = 0.7f
         };
 
         [Header("Debug")]
@@ -165,17 +170,20 @@ namespace Robogee.Player
         float _verticalVelocity;
         Vector3 _horizontalVelocity;
         bool _cursorLocked;
-        bool _isSliding;
+        bool _isBoosting;
         bool _isHovering;
         float _airborneTime;
-        bool _slideWasActive;
+        bool _boostWasActive;
+        float _boostLockUntil;
+        float _landingStunUntil;
+        bool _wasGrounded = true;
 
-        // Legacy names kept for HUD / callers.
+        // Legacy / HUD names
         public float JumpBoostFuelNormalized => jumpBoostFuel.Normalized;
         public float DashJetFuelNormalized => dashJetFuel.Normalized;
         public bool IsJumpBoostActive => _isHovering || jumpBoostFuel.RecentlySpent;
-        public bool IsDashJetActive => _isSliding || dashJetFuel.RecentlySpent;
-        public bool IsDashing => _isSliding;
+        public bool IsDashJetActive => _isBoosting || dashJetFuel.RecentlySpent;
+        public bool IsDashing => _isBoosting;
         public bool IsHovering => _isHovering;
         public bool IsGrounded => _controller != null && _controller.isGrounded;
         public Vector3 PlanarVelocity => new Vector3(_horizontalVelocity.x, 0f, _horizontalVelocity.z);
@@ -271,6 +279,10 @@ namespace Robogee.Player
                 ApplyLook(frame);
 
             bool grounded = _controller.isGrounded;
+            if (!_wasGrounded && grounded)
+                _landingStunUntil = Time.time + landingStunSeconds;
+            _wasGrounded = grounded;
+
             if (grounded)
                 _airborneTime = 0f;
             else
@@ -280,14 +292,18 @@ namespace Robogee.Player
             if (moveInput.sqrMagnitude > 1f)
                 moveInput.Normalize();
 
-            HandleJump(grounded, frame);
+            bool stunned = Time.time < _landingStunUntil;
+            if (stunned)
+                moveInput *= landingMoveScale;
+
+            HandleJump(grounded, stunned, frame);
             HandleHover(grounded, dt, frame);
-            HandleSlideBoost(moveInput, grounded, dt, frame);
-            IntegrateVelocity(moveInput, grounded, dt);
+            HandleBoost(moveInput, grounded, stunned, dt, frame);
+            IntegrateVelocity(moveInput, grounded, stunned, dt);
 
             if (!_isHovering)
                 jumpBoostFuel.TickRegen(dt);
-            if (!_isSliding)
+            if (!_isBoosting && Time.time >= _boostLockUntil)
                 dashJetFuel.TickRegen(dt);
 
             jumpBoostFuel.Clamp();
@@ -299,14 +315,16 @@ namespace Robogee.Player
             if (!showFuelOverlay)
                 return;
 
-            const float w = 260f;
-            GUI.Box(new Rect(12, 12, w, 96), "Mech Fuel");
+            const float w = 280f;
+            GUI.Box(new Rect(12, 12, w, 110), "MS EN");
             GUI.Label(new Rect(24, 36, w - 24, 20),
                 $"Jump: {jumpBoostFuel.current:0}/{jumpBoostFuel.max:0}");
             GUI.Label(new Rect(24, 56, w - 24, 20),
-                $"Jet:  {dashJetFuel.current:0}/{dashJetFuel.max:0}");
-            GUI.Label(new Rect(24, 76, w - 24, 20),
-                _isSliding ? "SLIDE" : (_isHovering ? "HOVER" : "WALK"));
+                $"Boost: {dashJetFuel.current:0}/{dashJetFuel.max:0}");
+            string state = _isBoosting ? "BOOST"
+                : (Time.time < _boostLockUntil ? "OVERHEAT/LAG"
+                : (Time.time < _landingStunUntil ? "LAND STUN" : "WALK"));
+            GUI.Label(new Rect(24, 76, w - 24, 20), state);
         }
 
         void ApplyLook(UnitInputFrame frame)
@@ -323,8 +341,9 @@ namespace Robogee.Player
             float lookX = frame.LookX * lookSensitivity;
             float lookY = frame.LookY * lookSensitivity;
 
-            // Heavier yaw while sliding.
-            float yawScale = _isSliding ? turnResponsiveness * 0.65f : turnResponsiveness;
+            float yawScale = _isBoosting ? turnResponsiveness * 0.55f : turnResponsiveness;
+            if (Time.time < _landingStunUntil)
+                yawScale *= 0.45f;
             transform.Rotate(0f, lookX * yawScale, 0f);
 
             if (cameraPivot == null)
@@ -360,9 +379,9 @@ namespace Robogee.Player
             cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 
-        void HandleJump(bool grounded, UnitInputFrame frame)
+        void HandleJump(bool grounded, bool stunned, UnitInputFrame frame)
         {
-            if (!grounded || !frame.JumpPressed)
+            if (!grounded || stunned || !frame.JumpPressed)
                 return;
 
             if (requireJumpFuel)
@@ -398,41 +417,53 @@ namespace Robogee.Player
                 hoverVerticalAcceleration * dt);
         }
 
-        void HandleSlideBoost(Vector3 moveInput, bool grounded, float dt, UnitInputFrame frame)
+        void HandleBoost(Vector3 moveInput, bool grounded, bool stunned, float dt, UnitInputFrame frame)
         {
-            _isSliding = false;
+            bool wasBoosting = _isBoosting;
+            _isBoosting = false;
+
+            if (stunned || Time.time < _boostLockUntil)
+            {
+                if (wasBoosting)
+                    BeginBoostRecovery(boostRecoverySeconds);
+                _boostWasActive = false;
+                return;
+            }
 
             if (!frame.DashHeld)
             {
-                _slideWasActive = false;
+                if (wasBoosting || _boostWasActive)
+                    BeginBoostRecovery(boostRecoverySeconds);
+                _boostWasActive = false;
                 return;
             }
 
-            if (!allowAirSlide && !grounded)
+            if (!allowAirBoost && !grounded)
                 return;
 
-            // Ignite cost stops tap-spam when nearly empty.
-            if (!_slideWasActive)
+            if (!_boostWasActive)
             {
-                if (!dashJetFuel.TrySpend(slideIgniteCost))
+                if (!dashJetFuel.TrySpend(boostIgniteCost))
                     return;
-                _slideWasActive = true;
+                _boostWasActive = true;
             }
 
-            dashJetFuel.SpendUpTo(slideFuelPerSecond, dt, out float spent);
+            dashJetFuel.SpendUpTo(boostFuelPerSecond, dt, out float spent);
             if (spent <= 0f)
             {
-                dashJetFuel.PunishRegen(slideEmptyExtraDelay);
-                _slideWasActive = false;
+                // EN empty → overheat (絆-like 使用不能)
+                dashJetFuel.PunishRegen(boostEmptyExtraDelay);
+                BeginBoostRecovery(boostOverheatSeconds);
+                _boostWasActive = false;
                 return;
             }
 
-            _isSliding = true;
+            _isBoosting = true;
 
             Vector3 localDir = moveInput;
             if (localDir.sqrMagnitude < 0.01f)
             {
-                if (!slideForwardWhenNoInput)
+                if (!boostForwardWhenNoInput)
                     return;
                 localDir = Vector3.forward;
             }
@@ -442,29 +473,32 @@ namespace Robogee.Player
             if (wish.sqrMagnitude > 0.0001f)
                 wish.Normalize();
 
-            // Accelerate toward slide top speed (no hard set).
-            Vector3 target = wish * slideMaxSpeed;
+            Vector3 target = wish * boostMaxSpeed;
             _horizontalVelocity = Vector3.MoveTowards(
                 _horizontalVelocity,
                 target,
-                slideAcceleration * dt);
+                boostAcceleration * dt);
 
-            // Soft steer: blend velocity toward wish a little without killing momentum.
-            if (slideSteer > 0f && wish.sqrMagnitude > 0.01f)
+            if (boostSteer > 0f && wish.sqrMagnitude > 0.01f)
             {
                 float speed = _horizontalVelocity.magnitude;
                 Vector3 steered = Vector3.Lerp(
                     _horizontalVelocity.normalized,
                     wish,
-                    slideSteer * dt * 4f);
+                    boostSteer * dt * 3.5f);
                 if (steered.sqrMagnitude > 0.0001f)
                     _horizontalVelocity = steered.normalized * speed;
             }
         }
 
-        void IntegrateVelocity(Vector3 moveInput, bool grounded, float dt)
+        void BeginBoostRecovery(float seconds)
         {
-            if (!_isSliding)
+            _boostLockUntil = Mathf.Max(_boostLockUntil, Time.time + seconds);
+        }
+
+        void IntegrateVelocity(Vector3 moveInput, bool grounded, bool stunned, float dt)
+        {
+            if (!_isBoosting)
             {
                 Vector3 wish = transform.TransformDirection(moveInput);
                 wish.y = 0f;
@@ -472,14 +506,18 @@ namespace Robogee.Player
                     wish.Normalize();
 
                 float control = grounded ? 1f : airControl;
+                if (stunned)
+                    control *= landingMoveScale;
+
                 Vector3 planar = _horizontalVelocity;
                 planar.y = 0f;
 
-                if (wish.sqrMagnitude > 0.001f)
+                if (wish.sqrMagnitude > 0.001f && !stunned)
                 {
                     Vector3 desired = wish * maxWalkSpeed;
-                    float align = Vector3.Dot(planar.normalized, wish);
-                    // Opposite stick = brake harder (vehicle-like).
+                    float align = planar.sqrMagnitude > 0.01f
+                        ? Vector3.Dot(planar.normalized, wish)
+                        : 1f;
                     float accel = align < -0.2f ? brakeFriction : walkAcceleration;
                     _horizontalVelocity = Vector3.MoveTowards(
                         planar,
@@ -488,21 +526,25 @@ namespace Robogee.Player
                 }
                 else
                 {
-                    // Coast to stop — not instant.
                     float friction = grounded ? coastFriction : coastFriction * 0.35f;
+                    if (stunned)
+                        friction *= 1.6f;
                     _horizontalVelocity = Vector3.MoveTowards(
                         planar,
                         Vector3.zero,
-                        friction * control * dt);
+                        friction * Mathf.Max(0.2f, control) * dt);
                 }
             }
             else if (grounded)
             {
-                // Light drag while sliding so it still feels heavy, not ice forever.
-                _horizontalVelocity = Vector3.MoveTowards(
-                    _horizontalVelocity,
-                    _horizontalVelocity.normalized * Mathf.Min(_horizontalVelocity.magnitude, slideMaxSpeed),
-                    slideFriction * dt);
+                float cap = Mathf.Min(_horizontalVelocity.magnitude, boostMaxSpeed);
+                if (_horizontalVelocity.sqrMagnitude > 0.0001f)
+                {
+                    _horizontalVelocity = Vector3.MoveTowards(
+                        _horizontalVelocity,
+                        _horizontalVelocity.normalized * cap,
+                        boostFriction * dt);
+                }
             }
 
             if (grounded && _verticalVelocity < 0f)
@@ -531,10 +573,10 @@ namespace Robogee.Player
             jumpBoostFuel.Clamp();
             dashJetFuel.Clamp();
             maxWalkSpeed = Mathf.Max(0f, maxWalkSpeed);
-            slideMaxSpeed = Mathf.Max(0f, slideMaxSpeed);
+            boostMaxSpeed = Mathf.Max(0f, boostMaxSpeed);
             jumpHeight = Mathf.Max(0f, jumpHeight);
             if (gravity >= 0f)
-                gravity = -26f;
+                gravity = -28f;
         }
 #endif
     }

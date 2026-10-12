@@ -26,25 +26,36 @@ public class PauseManager : MonoBehaviour
 
     public void PauseGame()
     {
-        pauseHudBinder.PausePanel.SetActive(true); // Show the pause panel
-        Time.timeScale = 0f; // Pause the game by setting time scale to 0
-        isPaused = true; // Set the pause state to true
+        if (pauseHudBinder != null && pauseHudBinder.PausePanel != null)
+            pauseHudBinder.PausePanel.SetActive(true);
+        Time.timeScale = 0f;
+        isPaused = true;
     }
 
     public void ResumeGame()
     {
-        pauseHudBinder.PausePanel.SetActive(false); // Hide the pause panel
-        Time.timeScale = 1f; // Resume the game by setting time scale to 1
-        isPaused = false; // Set the pause state to false
+        if (pauseHudBinder != null && pauseHudBinder.PausePanel != null)
+            pauseHudBinder.PausePanel.SetActive(false);
+        Time.timeScale = 1f;
+        isPaused = false;
     }
 
     public void ReturnToSelect()
     {
         Time.timeScale = 1f;
+        isPaused = false;
+        if (pauseHudBinder != null && pauseHudBinder.PausePanel != null)
+            pauseHudBinder.PausePanel.SetActive(false);
 
-        Scene currentScene = SceneManager.GetActiveScene();
+        // Soft return keeps EventSystem / Input wiring intact; full reload hid unit select.
+        var boot = Object.FindFirstObjectByType<Robogee.Combat.CombatAlphaBootstrap>();
+        if (boot != null)
+        {
+            boot.RestartToUnitSelect();
+            return;
+        }
 
-        SceneManager.LoadScene(currentScene.name);
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
 }

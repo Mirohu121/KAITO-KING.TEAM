@@ -2,113 +2,71 @@
 
 対象スクリプト: `Assets/Scripts/Player/UnitBMotor.cs`  
 入力: `Assets/Scripts/Player/UnitPlayerInput.cs` / `UnitInputFrame.cs`  
-Input Actions: `Assets/Input/UnitControls`（Resources からもロード）  
-対象HUD: `Assets/Scripts/UI/FuelGaugeHud.cs`（Canvas Prefab `Assets/UI/Prefabs/FuelHud.prefab` をバインド）  
-テストシーン: `Assets/Scenes/TestField.unity`  
+Input Actions: `Assets/Input/UnitControls`  
+対象HUD: `Assets/Scripts/UI/FuelGaugeHud.cs`  
 戦闘α: `Documentation/Combat_Alpha_Spec.md`
 
-このドキュメントは **機体 B（平均・頑強）を完成ベース** にし、他メンバーが **機体 A（俊敏）／機体 C（力強）** に数値・挙動を振り分けやすくするための短い仕様です。
+---
+
+## 1. コンセプト（戦場の絆寄り）
+
+αの手触り: **重い歩き + ブースト（EN）+ 着地硬直**。ホバーし放題はしない。
+
+| 要素 | 絆の対応 | 実装 |
+|------|----------|------|
+| 歩き | レバー移動 | 低め加速の歩き |
+| ブースト | 右ペダル | Shift 長押し、EN消費、離すと**隙** |
+| ジャンプ | 左ペダル | Space、着地で**硬直** |
+| オーバーヒート | EN枯渇後使用不能 | `boostOverheatSeconds` |
+
+| 機体 | 方向 |
+|------|------|
+| **B** | 平均・隙ありブースト |
+| **A** | 歩き/ブースト速め、隙短め |
+| **C** | 重く、隙長め |
 
 ---
 
-## 1. コンセプト（地上スライド）
+## 2. 操作
 
-αの手触り方針: **し放題ホバーではなく、重さのある地上機＋スライドブースト**。
-
-| 機体 | 役割 | 手触りの方向 |
-|------|------|----------------|
-| **B（現行）** | 盾剣・平均 | 加速遅め、滑って止まる、スライドは燃料食い |
-| **A** | 俊敏・射撃寄り | 歩き速め、スライド加速↑／消費↓、空中制御やや↑ |
-| **C** | 力強 | 歩き遅め、ブレーキ弱め（惰性）、スライド短く重い |
-
-コードを分けず、**B の Component を複製して Inspector を変える**運用。
-
----
-
-## 2. 操作（Input System）
-
-`UnitBMotor` は `Input.*` を読まず、`IUnitInputSource`（既定: `UnitPlayerInput`）から受け取る。
-
-| Action | Keyboard&Mouse | Gamepad | 動作 | 消費燃料 |
-|--------|----------------|---------|------|----------|
-| Move | WASD | 左スティック | 歩き（慣性あり） | なし |
-| Look | Mouse delta | 右スティック | 視点 | なし |
-| Jump | Space | South | 接地ジャンプのみ（ホバー既定OFF） | **Jump Boost** |
-| Dash | Left Shift | LB | **スライドブースト**（押し込み加速、即時セット速度ではない） | **Dash Jet** |
-| ToggleCursor | Esc | Start | カーソルロック切替 | なし |
-| LockOn | Q / 右クリック | RB | ロックオン（別コンポーネント） | なし |
-
-NPC / 2P は同じ `IUnitInputSource`。
+| Action | キー | 動作 | 燃料 |
+|--------|------|------|------|
+| Move | WASD | 歩き（慣性） | なし |
+| Look | Mouse | 視点 | なし |
+| Jump | Space | ジャンプ（着地硬直あり） | Jump Boost |
+| Dash | Left Shift | ブースト（離すと隙 / 空でOH） | Dash Jet |
+| LockOn | Q / 中クリック | ロック | なし |
+| Pause | Esc | ポーズ | なし |
 
 ---
 
-## 3. 燃料二系統
+## 3. Inspector 要点
 
-| タンク | 用途 | HUD |
-|--------|------|-----|
-| **Jump Boost**（橙） | ジャンプ初速コスト（ホバーはオプション） | 左ゲージ「ブースト」 |
-| **Dash Jet**（水色） | スライドブースト | 左ゲージ「ジェット」 |
-
-- 消費後 `regenDelay` 待ってから回復  
-- スライド枯渇時は追加で `slideEmptyExtraDelay` ぶん回復開始が遅れる  
-- 点火に `slideIgniteCost`（空タップ連打防止）
-
----
-
-## 4. Inspector（改造の本体）
-
-### Weight / Ground Walk
-- `maxWalkSpeed` … 歩き最高速  
-- `walkAcceleration` … 加速（低いほど重い）  
-- `coastFriction` … スティック離し時の惰性摩擦（低いほど滑る）  
-- `brakeFriction` … 逆入力時のブレーキ  
-- `turnResponsiveness` … 視点ヨー（スライド中はさらに鈍る）
-
-### Air
-- `airControl` … 空中操舵（αは低め）  
-- `gravity` … 重力（負）
+### Walk
+- `maxWalkSpeed` / `walkAcceleration` / `coastFriction` / `brakeFriction`
 
 ### Jump
-- `jumpHeight` / `jumpFuelCost` / `requireJumpFuel`  
-- `enableHover` … **α既定 false**（地上戦）
+- `jumpHeight` / `jumpFuelCost`
+- `landingStunSeconds` / `landingMoveScale`
+- `enableHover` … 既定 false
 
-### Slide Boost (Dash Jet)
-- `slideMaxSpeed` … スライド時の目標最高速  
-- `slideAcceleration` … 押し込み加速（スナップしない）  
-- `slideFriction` … スライド中の軽いドラッグ  
-- `slideFuelPerSecond` / `slideIgniteCost`  
-- `allowAirSlide` … **α既定 false**  
-- `slideSteer` … スライド中のスティック操舵（0＝レール）  
-- `slideEmptyExtraDelay` … 枯渇後の回復ペナルティ
+### Boost
+- `boostMaxSpeed` / `boostAcceleration` / `boostFuelPerSecond`
+- `boostRecoverySeconds` … 離したあとの隙
+- `boostOverheatSeconds` … EN空のロック
+- `allowAirBoost` … 既定 false
 
 ---
 
-## 5. A / C への振り分け例
+## 4. リトライ → 機体選択
 
-### 機体 A（俊敏）
-- `maxWalkSpeed` ↑、`walkAcceleration` ↑  
-- `slideMaxSpeed` ↑、`slideAcceleration` ↑、`slideFuelPerSecond` やや↓  
-- `slideSteer` ↑、`airControl` やや↑  
-
-### 機体 C（力強）
-- `maxWalkSpeed` ↓、`walkAcceleration` ↓、`coastFriction` ↓（惰性大）  
-- `slideMaxSpeed` 普通、`slideFuelPerSecond` ↑（すぐ枯れる）  
-- `jumpFuelCost` ↑、`turnResponsiveness` ↓  
+`CombatAlphaBootstrap.RestartToUnitSelect()` が試合を解体して機体選択を再表示。  
+Pause の Restart / リザルトの「リトライ」から呼ばれる（シーン全リロードは使わない）。
 
 ---
 
-## 6. 公開プロパティ（UI / 他）
+## 5. 公開 API
 
-- `JumpBoostFuelNormalized` / `DashJetFuelNormalized`  
-- `IsHovering` / `IsDashing`（スライド中も `IsDashing`）  
-- `IsJumpBoostActive` / `IsDashJetActive`  
-- `IsGrounded` / `PlanarVelocity` / `PlanarSpeed`  
-- `ResetLook` / `RebindCameraPivot` / `SetInputSource`
-
----
-
-## 7. まだやらないこと
-
-- 盾・剣・ガトリング / 部位破壊 / 物資 / 本ステージ / ネット同期  
-
-移動の手触りが固まってから戦闘へ進む。
+- `JumpBoostFuelNormalized` / `DashJetFuelNormalized`
+- `IsDashing`（ブースト中） / `IsHovering` / `IsGrounded`
+- `PlanarSpeed` / `ResetLook` / `RebindCameraPivot`

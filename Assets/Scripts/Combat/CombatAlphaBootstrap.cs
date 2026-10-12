@@ -72,12 +72,88 @@ namespace Robogee.Combat
             Debug.Log("[CombatAlpha] Select Unit A / B / C");
         }
 
+        /// <summary>
+        /// Pause / Result Retry: tear down the fight and reopen unit select.
+        /// Prefer this over LoadScene — reload was leaving select UI invisible.
+        /// </summary>
+        public void RestartToUnitSelect()
+        {
+            Time.timeScale = 1f;
+            _matchStarted = false;
+
+            ClosePauseUi();
+            TeardownMatchActors();
+            ResetMatchSystems();
+            FuelGaugeHud.HideAll();
+            EnsureEventSystem();
+            EnsureMenuCamera();
+
+            if (_select == null)
+            {
+                var systems = GameObject.Find("CombatSystems");
+                if (systems == null)
+                    systems = new GameObject("CombatSystems");
+                _select = systems.GetComponent<UnitSelectBinder>()
+                          ?? systems.AddComponent<UnitSelectBinder>();
+            }
+
+            _select.Show(OnUnitPicked);
+            Debug.Log("[CombatAlpha] Return to unit select");
+        }
+
         void OnUnitPicked(UnitId id)
         {
             if (_matchStarted)
                 return;
             _matchStarted = true;
             StartMatch(id);
+        }
+
+        static void ClosePauseUi()
+        {
+            var pause = FindFirstObjectByType<PauseManager>();
+            if (pause == null)
+                return;
+            pause.ResumeGame();
+        }
+
+        static void TeardownMatchActors()
+        {
+            foreach (var motor in FindObjectsByType<UnitBMotor>(FindObjectsSortMode.None))
+            {
+                if (motor == null)
+                    continue;
+                // Keep scene placeholder cubes disabled; destroy fight spawns.
+                if (motor.name.StartsWith("Player_Unit") || motor.name.StartsWith("CPU_Enemy"))
+                    Destroy(motor.gameObject);
+                else
+                    motor.gameObject.SetActive(false);
+            }
+
+            foreach (var t in FindObjectsByType<Transform>(FindObjectsSortMode.None))
+            {
+                if (t != null && t.name.StartsWith("CPU_Enemy"))
+                    Destroy(t.gameObject);
+            }
+        }
+
+        void ResetMatchSystems()
+        {
+            var systems = GameObject.Find("CombatSystems");
+            if (systems == null)
+                return;
+
+            var match = systems.GetComponent<CombatMatchController>();
+            if (match != null)
+                match.ResetForSelect();
+
+            var hud = systems.GetComponent<MatchHudBinder>();
+            if (hud != null)
+                hud.HideForSelect();
+
+            var lockHud = systems.GetComponent<LockOnHudBinder>();
+            if (lockHud != null)
+                lockHud.HideForSelect();
         }
 
         void StartMatch(UnitId playerUnit)

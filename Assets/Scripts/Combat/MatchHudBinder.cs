@@ -26,6 +26,8 @@ namespace Robogee.Combat
         //追記
         GameObject matchInfoGroup;
 
+        [SerializeField] GameObject fuelHud;
+
         public void Bind(CombatMatchController matchController, CombatantCore player, CombatantCore enemy)
         {
             match = matchController;
@@ -141,9 +143,12 @@ namespace Robogee.Combat
                     resultText.text = match.ResultText;
             }
 
-            //追記: MatchInfoGroupの表示/非表示を制御
-            if (matchInfoGroup != null && match != null) 
-                atchInfoGroup.SetActive(!match.HasEnded);
+            //追記: MatchInfoGroupとfuelHudの表示/非表示を制御
+            if (match != null)
+            {
+                matchInfoGroup?.SetActive(!match.HasEnded);
+                fuelHud?.SetActive(!match.HasEnded);
+            }
 
         }
 

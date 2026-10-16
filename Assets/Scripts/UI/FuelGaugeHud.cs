@@ -28,6 +28,13 @@ namespace Robogee.Player
         [SerializeField] Color labelColor = new Color(0.92f, 0.93f, 0.95f, 0.95f);
         [SerializeField] Color activeColor = new Color(1f, 0.85f, 0.35f, 1f);
 
+        [Header("Shared boost gauge (絆: blue → yellow → red)")]
+        [SerializeField] Color gaugeHigh = new Color(0.25f, 0.62f, 1f, 0.95f);
+        [SerializeField] Color gaugeMid = new Color(1f, 0.86f, 0.2f, 0.95f);
+        [SerializeField] Color gaugeLow = new Color(1f, 0.22f, 0.18f, 0.95f);
+        [SerializeField] [Range(0f, 1f)] float midThreshold = 0.5f;
+        [SerializeField] [Range(0f, 1f)] float lowThreshold = 0.25f;
+
         GameObject _instance;
         static Sprite _whiteSprite;
 
@@ -69,7 +76,16 @@ namespace Robogee.Player
                 return;
             }
 
-            if (motor == null || boostFillImage == null || jetFillImage == null)
+            if (motor == null || boostFillImage == null)
+                return;
+
+            if (motor.UsesSharedBoostGauge)
+            {
+                UpdateSharedGauge();
+                return;
+            }
+
+            if (jetFillImage == null)
                 return;
 
             boostFillImage.fillAmount = motor.JumpBoostFuelNormalized;
@@ -93,6 +109,42 @@ namespace Robogee.Player
             float pulse = 0.85f + 0.15f * Mathf.Sin(Time.unscaledTime * 8f);
             boostFillImage.color = boostActive ? boostFill * pulse : boostFill;
             jetFillImage.color = jetActive ? jetFill * pulse : jetFill;
+        }
+
+        void UpdateSharedGauge()
+        {
+            float n = motor.BoostNormalized;
+            boostFillImage.fillAmount = n;
+
+            Color color;
+            if (motor.IsOverheated)
+            {
+                float blink = Mathf.PingPong(Time.unscaledTime * 4f, 1f);
+                color = Color.Lerp(gaugeLow, gaugeLow * 0.45f, blink);
+            }
+            else if (n > midThreshold)
+            {
+                color = gaugeHigh;
+            }
+            else if (n > lowThreshold)
+            {
+                color = gaugeMid;
+            }
+            else
+            {
+                color = gaugeLow;
+            }
+            boostFillImage.color = color;
+
+            if (boostStatus == null)
+                return;
+
+            string state = motor.IsOverheated ? "OVERHEAT"
+                : motor.IsDashing ? "DASH"
+                : motor.IsJumpThrusting ? "JUMP"
+                : "";
+            boostStatus.text = state;
+            boostStatus.color = motor.IsOverheated ? gaugeLow : state.Length > 0 ? activeColor : labelColor;
         }
 
         public static void HideAll()
@@ -137,6 +189,11 @@ namespace Robogee.Player
             WidenHolder(FindDeep<RectTransform>(root, "Boost"));
             WidenHolder(FindDeep<RectTransform>(root, "Jet"));
 
+            bool shared = motor != null && motor.UsesSharedBoostGauge;
+            var jetHolder = FindDeep<RectTransform>(root, "Jet");
+            if (jetHolder != null)
+                jetHolder.gameObject.SetActive(!shared);
+
             foreach (var text in root.GetComponentsInChildren<Text>(true))
             {
                 if (text == null)
@@ -149,7 +206,7 @@ namespace Robogee.Player
                 switch (text.name)
                 {
                     case "Title":
-                        text.text = "FUEL";
+                        text.text = shared ? "BOOST" : "FUEL";
                         text.fontSize = 40;
                         break;
                     case "TopLabel":
@@ -164,7 +221,7 @@ namespace Robogee.Player
                     case "BottomLabel":
                         text.fontSize = 24;
                         if (text.transform.parent != null && text.transform.parent.name == "Boost")
-                            text.text = "JUMP";
+                            text.text = shared ? "" : "JUMP";
                         else if (text.transform.parent != null && text.transform.parent.name == "Jet")
                             text.text = "DASH";
                         StretchLabel(text.rectTransform, new Vector2(-0.35f, -0.02f), new Vector2(1.35f, 0.12f));

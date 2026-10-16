@@ -15,7 +15,18 @@ namespace Robogee.Combat
         [SerializeField] RectTransform reticle;
         [SerializeField] CanvasGroup canvasGroup;
 
+        [Header("絆 lock colors")]
+        [SerializeField] Color blueLock = new Color(0.3f, 0.7f, 1f, 0.95f);
+        [SerializeField] Color redLock = new Color(1f, 0.2f, 0.15f, 0.95f);
+        [SerializeField] Color yellowLock = new Color(1f, 0.85f, 0.2f, 1f);
+        [Tooltip("Distance label multiplier: 1 unit = 10m of an 18m MS.")]
+        [SerializeField] float metersPerUnit = 10f;
+
         GameObject _instance;
+        Graphic _reticleGraphic;
+        Graphic _rimGraphic;
+        Graphic _labelGraphic;
+        Text _distanceText;
 
         public void Bind(UnitLockOn source)
         {
@@ -46,10 +57,7 @@ namespace Robogee.Combat
             if (lockOn == null || reticle == null)
                 return;
 
-            bool on = false;
-            Vector3 marker = default;
-            if (lockOn.IsLocked && lockOn.TryGetMarkerPoint(out marker))
-                on = true;
+            bool on = lockOn.TryGetMarkerPoint(out Vector3 marker);
 
             if (canvasGroup != null)
             {
@@ -79,6 +87,26 @@ namespace Robogee.Combat
             }
 
             reticle.position = screen;
+            ApplyLockVisuals();
+        }
+
+        void ApplyLockVisuals()
+        {
+            Color state = lockOn.State == UnitLockOn.LockState.Red ? redLock : blueLock;
+            bool melee = lockOn.IsInMeleeRange;
+
+            if (_reticleGraphic != null)
+                _reticleGraphic.color = state;
+            if (_rimGraphic != null)
+                _rimGraphic.color = melee ? yellowLock : state;
+            if (_labelGraphic != null)
+                _labelGraphic.color = melee ? yellowLock : state;
+
+            if (_distanceText != null)
+            {
+                _distanceText.text = $"{lockOn.DisplayDistance * metersPerUnit:0}m";
+                _distanceText.color = melee ? yellowLock : state;
+            }
         }
 
         void EnsureInstance()
@@ -120,6 +148,42 @@ namespace Robogee.Combat
 
             if (canvasGroup == null && _instance != null)
                 canvasGroup = _instance.GetComponent<CanvasGroup>();
+
+            if (reticle == null)
+                return;
+
+            if (_reticleGraphic == null)
+                _reticleGraphic = reticle.GetComponent<Graphic>();
+            if (_rimGraphic == null)
+                _rimGraphic = FindDeep(root, "Rim")?.GetComponent<Graphic>();
+            if (_labelGraphic == null)
+                _labelGraphic = FindDeep(root, "LockLabel")?.GetComponent<Graphic>();
+            if (_distanceText == null)
+                _distanceText = EnsureDistanceText(reticle);
+        }
+
+        static Text EnsureDistanceText(RectTransform parent)
+        {
+            var existing = parent.Find("Distance");
+            if (existing != null && existing.TryGetComponent(out Text found))
+                return found;
+
+            var go = new GameObject("Distance", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            var rt = (RectTransform)go.transform;
+            rt.SetParent(parent, false);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.anchoredPosition = new Vector2(0f, -40f);
+            rt.sizeDelta = new Vector2(120f, 28f);
+
+            var text = go.GetComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 20;
+            text.alignment = TextAnchor.UpperCenter;
+            text.horizontalOverflow = HorizontalWrapMode.Overflow;
+            text.verticalOverflow = VerticalWrapMode.Overflow;
+            text.raycastTarget = false;
+            return text;
         }
 
         static Transform FindDeep(Transform root, string name)

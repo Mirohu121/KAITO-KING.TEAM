@@ -14,6 +14,12 @@ namespace Robogee.Player
         [SerializeField] Vector3 headLocalOffset = new Vector3(0f, 0.06f, 0.12f);
         [SerializeField] float fallbackEyeHeight = 1.7f;
         [SerializeField] float fallbackForward = 0.35f;
+        [Tooltip("Cockpit is bolted to the body: sample the head once and ignore walk-anim head bob. " +
+                 "Step shake comes from CockpitCameraShake instead.")]
+        [SerializeField] bool rigidCockpit = true;
+
+        bool _hasCockpitEye;
+        Vector3 _cockpitEyeLocal;
 
         void Awake()
         {
@@ -45,7 +51,17 @@ namespace Robogee.Player
                 return;
 
             Vector3 eye;
-            if (head != null)
+            if (head != null && rigidCockpit)
+            {
+                if (!_hasCockpitEye)
+                {
+                    _cockpitEyeLocal = transform.InverseTransformPoint(head.position) + headLocalOffset;
+                    _hasCockpitEye = true;
+                }
+
+                eye = transform.TransformPoint(_cockpitEyeLocal);
+            }
+            else if (head != null)
             {
                 // Position from head, offset in BODY forward (not head bone forward).
                 eye = head.position
@@ -68,6 +84,7 @@ namespace Robogee.Player
         {
             cameraPivot = pivot;
             head = headBone != null ? headBone : FindHead(transform);
+            _hasCockpitEye = false;
         }
 
         static Transform FindHead(Transform root)

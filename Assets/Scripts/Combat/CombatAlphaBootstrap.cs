@@ -382,6 +382,11 @@ namespace Robogee.Combat
                 follow = go.AddComponent<FpsHeadCameraFollow>();
             follow.Bind(pivot, null);
 
+            var shake = camTf.GetComponent<CockpitCameraShake>();
+            if (shake == null)
+                shake = camTf.gameObject.AddComponent<CockpitCameraShake>();
+            shake.Bind(motor);
+
             // Slightly tighter FOV so distant foes don't look oversized from eye height.
             cam.fieldOfView = 70f;
         }

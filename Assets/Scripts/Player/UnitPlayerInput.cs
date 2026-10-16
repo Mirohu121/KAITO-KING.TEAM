@@ -23,6 +23,7 @@ namespace Robogee.Player
         InputAction _toggleCursor;
         InputAction _attack;
         InputAction _lockOn;
+        InputAction _lockSwitch;
         UnitInputFrame _current;
         bool _ownsAssetInstance;
 
@@ -96,7 +97,8 @@ namespace Robogee.Player
                 DashHeld = _dash != null && _dash.IsPressed(),
                 ToggleCursorPressed = _toggleCursor != null && _toggleCursor.WasPressedThisFrame(),
                 AttackPressed = _attack != null && _attack.WasPressedThisFrame(),
-                LockOnPressed = _lockOn != null && _lockOn.WasPressedThisFrame()
+                LockOnPressed = _lockOn != null && _lockOn.WasPressedThisFrame(),
+                LockSwitchPressed = _lockSwitch != null && _lockSwitch.WasPressedThisFrame()
             };
         }
 
@@ -137,6 +139,7 @@ namespace Robogee.Player
             _toggleCursor = _map.FindAction("ToggleCursor", throwIfNotFound: false);
             _attack = _map.FindAction("Attack", throwIfNotFound: false);
             _lockOn = _map.FindAction("LockOn", throwIfNotFound: false);
+            _lockSwitch = _map.FindAction("LockSwitch", throwIfNotFound: false);
         }
     }
 }

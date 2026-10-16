@@ -16,6 +16,7 @@ namespace Robogee.Combat
         [SerializeField] LayerMask hitMask = ~0;
 
         IUnitInputSource _input;
+        UnitLockOn _lockOn;
         float _nextAttack;
         readonly RaycastHit[] _hits = new RaycastHit[24];
         readonly Collider[] _overlap = new Collider[24];
@@ -105,6 +106,18 @@ namespace Robogee.Combat
                 if (dir.sqrMagnitude < 0.001f)
                     dir = transform.forward;
                 dir.Normalize();
+            }
+
+            // 黄ロック: swing toward the target instead of straight ahead.
+            if (_lockOn == null)
+                _lockOn = GetComponent<UnitLockOn>();
+            if (_lockOn != null && _lockOn.TryGetMeleeAssistPoint(out Vector3 assist))
+            {
+                origin = transform.position + Vector3.up * 1.0f;
+                Vector3 toTarget = assist - origin;
+                toTarget.y *= 0.35f;
+                if (toTarget.sqrMagnitude > 0.001f)
+                    dir = toTarget.normalized;
             }
 
             CombatantCore best = null;

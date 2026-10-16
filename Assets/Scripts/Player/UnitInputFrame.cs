@@ -15,6 +15,7 @@ namespace Robogee.Player
         public bool ToggleCursorPressed;
         public bool AttackPressed;
         public bool LockOnPressed;
+        public bool LockSwitchPressed;
 
         public UnityEngine.Vector3 MovePlanar => new UnityEngine.Vector3(MoveX, 0f, MoveY);
     }

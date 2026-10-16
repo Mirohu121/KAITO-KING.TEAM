@@ -5,160 +5,105 @@ using UnityEngine.Serialization;
 namespace Robogee.Player
 {
     /// <summary>
-    /// Grounded MS motor inspired by 戦場の絆 feel:
-    /// heavy walk, boost dash with post-boost lag, jump with landing stun, EN overheat.
-    /// Input via <see cref="IUnitInputSource"/> only.
+    /// 戦場の絆-style MS motor: one shared boost gauge (dash + jump), overheat until 100%,
+    /// hold-to-rise jump with ふわジャン, air dash, stun after dash / landing scaled by duration,
+    /// rpm-capped turning and no manual pitch (vertical aim comes from red lock).
+    /// Spec fields use the wiki's units (km/h, cnt, rpm, f) and are converted with
+    /// <see cref="worldScale"/>. Input via <see cref="IUnitInputSource"/> only.
     /// See Documentation/UnitB_Motor_Spec.md
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     [RequireComponent(typeof(UnitPlayerInput))]
     public class UnitBMotor : MonoBehaviour
     {
-        [Serializable]
-        public class FuelTank
-        {
-            public float max = 100f;
-            public float current = 100f;
-            public float regenPerSecond = 20f;
-            public float regenDelay = 0.75f;
-
-            float _lastSpendTime = -999f;
-
-            public float Normalized => max > 0.0001f ? Mathf.Clamp01(current / max) : 0f;
-            public bool RecentlySpent => Time.time - _lastSpendTime < Mathf.Max(0.2f, regenDelay);
-
-            public bool TrySpend(float amount)
-            {
-                if (amount <= 0f)
-                    return true;
-                if (current < amount)
-                    return false;
-                current -= amount;
-                _lastSpendTime = Time.time;
-                return true;
-            }
-
-            public void SpendUpTo(float amountPerSecond, float dt, out float spent)
-            {
-                spent = 0f;
-                if (amountPerSecond <= 0f || dt <= 0f || current <= 0f)
-                    return;
-
-                float want = amountPerSecond * dt;
-                spent = Mathf.Min(want, current);
-                current -= spent;
-                if (spent > 0f)
-                    _lastSpendTime = Time.time;
-            }
-
-            public void TickRegen(float dt)
-            {
-                if (dt <= 0f || current >= max)
-                    return;
-                if (Time.time < _lastSpendTime + regenDelay)
-                    return;
-                current = Mathf.Min(max, current + regenPerSecond * dt);
-            }
-
-            public void Clamp()
-            {
-                max = Mathf.Max(0.01f, max);
-                current = Mathf.Clamp(current, 0f, max);
-            }
-
-            public void PunishRegen(float extraSeconds)
-            {
-                if (extraSeconds <= 0f)
-                    return;
-                _lastSpendTime = Mathf.Max(_lastSpendTime, Time.time) + extraSeconds;
-            }
-        }
+        const float SecondsPerCnt = 0.9f;
+        const float FramesPerCnt = 60f;
+        const float GaugeMax = 100f;
 
         [Header("References")]
         [SerializeField] Transform cameraPivot;
         [SerializeField] MonoBehaviour inputSourceBehaviour;
 
+        [Header("Scale")]
+        [Tooltip("Unit height / MS height. 1.8m skeleton vs 18m MS = 0.1.")]
+        [SerializeField] float worldScale = 0.1f;
+
+        [Header("絆スペック（wiki機体表の値をそのまま）")]
+        [SerializeField] float walkSpeedKmh = 108f;
+        [SerializeField] float dashSpeedKmh = 210f;
+        [Tooltip("Full gauge → empty while holding dash (ダッシュ時間).")]
+        [SerializeField] float dashTimeCnt = 2.3f;
+        [SerializeField] float jumpSpeedKmh = 175f;
+        [SerializeField] float turnRpm = 10.6f;
+        [Tooltip("硬直時間 = small-jump landing stun.")]
+        [SerializeField] float stunFrames = 36f;
+        [Tooltip("Overheat: seconds-in-cnt until the gauge is back to 100.")]
+        [SerializeField] float overheatRecoverCnt = 3.5f;
+
+        [Header("Boost gauge")]
+        [Tooltip("Full gauge → empty while holding jump. Jump drains harder than dash.")]
+        [SerializeField] float jumpFullTimeCnt = 1.7f;
+        [SerializeField] float dashIgnitePercent = 3f;
+        [Tooltip("Spent the moment the jump pedal goes down (ふわジャン cost).")]
+        [SerializeField] float jumpIgnitePercent = 8f;
+        [Tooltip("Normal regen 0 → 100. Starts the instant both pedals are released.")]
+        [SerializeField] float regenFullCnt = 3.5f;
+        [SerializeField] [Range(0f, 1f)] float airRegenScale = 0.5f;
+        [Tooltip("格闘型 boost limiter: a single dash stops after spending this % (0 = none).")]
+        [SerializeField] float boostLimiterPercent = 0f;
+        [Tooltip("格闘型: no regen for this long after a dash.")]
+        [SerializeField] float regenLockAfterDashCnt = 0f;
+        [SerializeField] bool allowAirDash = true;
+
+        [Header("Dash feel")]
+        [SerializeField] float dashAccelSeconds = 0.12f;
+        [Tooltip("Dash direction follows the lever mid-dash at this rate.")]
+        [SerializeField] float dashSteerDegPerSec = 540f;
+        [SerializeField] [Range(0f, 1f)] float airDashGravityScale = 0.1f;
+
+        [Header("Jump feel (ふわジャン)")]
+        [Tooltip("Instant lift when the pedal goes down, as a ratio of jump speed.")]
+        [SerializeField] [Range(0f, 1f)] float jumpLiftOnPress = 0.45f;
+        [SerializeField] float jumpRampSeconds = 0.25f;
+        [Tooltip("After releasing, the rise coasts this long before falling.")]
+        [SerializeField] float riseCarrySeconds = 0.22f;
+        [SerializeField] float fallGravity = -14f;
+        [SerializeField] float maxFallSpeedKmh = 200f;
+
+        [Header("Walk / air")]
+        [SerializeField] float walkAccelSeconds = 0.18f;
+        [SerializeField] float walkStopSeconds = 0.14f;
+        [SerializeField] float airSteerSeconds = 0.9f;
+        [SerializeField] float airDrag = 0.35f;
+        [SerializeField] float groundedStickForce = -2.5f;
+
+        [Header("硬直")]
+        [SerializeField] float bigJumpStunFrames = 58f;
+        [Tooltip("Air time at or below this counts as a small jump.")]
+        [SerializeField] float smallJumpAirCnt = 0.7f;
+        [Tooltip("Air time at which landing stun reaches bigJumpStunFrames.")]
+        [SerializeField] float bigJumpAirCnt = 2.5f;
+        [SerializeField] float dashStunMinFrames = 22f;
+        [SerializeField] float dashStunMaxFrames = 54f;
+        [Tooltip("Extra landing stun while overheated (estimate, not from the wiki).")]
+        [SerializeField] float overheatLandingExtraFrames = 12f;
+        [SerializeField] float landingMinAirSeconds = 0.15f;
+        [SerializeField] float stunBrakeDecel = 25f;
+        [SerializeField] bool allowTurnWhileStunned = true;
+
         [Header("Look")]
         [FormerlySerializedAs("mouseSensitivity")]
         [SerializeField] float lookSensitivity = 2f;
-        [SerializeField] float minPitch = -80f;
-        [SerializeField] float maxPitch = 80f;
+        [Tooltip("絆 has no manual pitch. Enable for a limited range.")]
+        [SerializeField] bool allowManualPitch = false;
+        [SerializeField] float manualPitchLimit = 25f;
+        [SerializeField] float pitchReturnSpeed = 6f;
+        [SerializeField] float lockPitchLimit = 60f;
         [SerializeField] bool lockCursorOnStart = true;
         [SerializeField] float lockOnTurnSpeed = 14f;
 
-        [Header("Weight / Walk (絆: レバー歩き)")]
-        [FormerlySerializedAs("maxSpeed")]
-        [SerializeField] float maxWalkSpeed = 4.6f;
-        [FormerlySerializedAs("acceleration")]
-        [SerializeField] float walkAcceleration = 11f;
-        [FormerlySerializedAs("deceleration")]
-        [SerializeField] float coastFriction = 8f;
-        [SerializeField] float brakeFriction = 16f;
-        [SerializeField] [Range(0.05f, 1f)] float turnResponsiveness = 0.5f;
-
-        [Header("Air")]
-        [SerializeField] [Range(0f, 1f)] float airControl = 0.18f;
-        [SerializeField] float gravity = -28f;
-        [SerializeField] float groundedStickForce = -2.5f;
-
-        [Header("Jump + Landing Stun (絆: 着地硬直)")]
-        [SerializeField] float jumpHeight = 1.15f;
-        [SerializeField] float jumpFuelCost = 22f;
-        [SerializeField] bool requireJumpFuel = true;
-        [SerializeField] bool enableHover = false;
-        [SerializeField] float hoverFuelPerSecond = 40f;
-        [SerializeField] float hoverAscendSpeed = 2.2f;
-        [SerializeField] float hoverVerticalAcceleration = 10f;
-        [SerializeField] float hoverGravityScale = 0.35f;
-        [SerializeField] float hoverArmDelay = 0.1f;
-        [Tooltip("Seconds of reduced control after landing.")]
-        [SerializeField] float landingStunSeconds = 0.32f;
-        [SerializeField] [Range(0f, 1f)] float landingMoveScale = 0.25f;
-
-        [Header("Boost Dash (絆: 右ペダル / EN)")]
-        [FormerlySerializedAs("dashSpeed")]
-        [FormerlySerializedAs("slideMaxSpeed")]
-        [SerializeField] float boostMaxSpeed = 11.5f;
-        [FormerlySerializedAs("slideAcceleration")]
-        [SerializeField] float boostAcceleration = 42f;
-        [FormerlySerializedAs("slideFriction")]
-        [SerializeField] float boostFriction = 2.5f;
-        [FormerlySerializedAs("dashFuelPerSecond")]
-        [FormerlySerializedAs("slideFuelPerSecond")]
-        [SerializeField] float boostFuelPerSecond = 38f;
-        [FormerlySerializedAs("slideIgniteCost")]
-        [SerializeField] float boostIgniteCost = 6f;
-        [FormerlySerializedAs("allowAirDash")]
-        [FormerlySerializedAs("allowAirSlide")]
-        [SerializeField] bool allowAirBoost = false;
-        [FormerlySerializedAs("slideSteer")]
-        [SerializeField] [Range(0f, 1f)] float boostSteer = 0.28f;
-        [FormerlySerializedAs("slideForwardWhenNoInput")]
-        [SerializeField] bool boostForwardWhenNoInput = true;
-        [Tooltip("隙 after releasing boost (cannot re-boost).")]
-        [SerializeField] float boostRecoverySeconds = 0.38f;
-        [Tooltip("Overheat lock when EN hits empty.")]
-        [SerializeField] float boostOverheatSeconds = 1.45f;
-        [FormerlySerializedAs("slideEmptyExtraDelay")]
-        [SerializeField] float boostEmptyExtraDelay = 0.5f;
-
-        [Header("Fuel - Jump Boost")]
-        [SerializeField] FuelTank jumpBoostFuel = new FuelTank
-        {
-            max = 100f,
-            current = 100f,
-            regenPerSecond = 11f,
-            regenDelay = 0.85f
-        };
-
-        [Header("Fuel - Dash Jet (Boost EN)")]
-        [SerializeField] FuelTank dashJetFuel = new FuelTank
-        {
-            max = 100f,
-            current = 100f,
-            regenPerSecond = 14f,
-            regenDelay = 0.7f
-        };
+        [Header("Footsteps")]
+        [SerializeField] float strideMeters = 1.6f;
 
         [Header("Debug")]
         [SerializeField] bool showFuelOverlay = false;
@@ -166,28 +111,64 @@ namespace Robogee.Player
         CharacterController _controller;
         IUnitInputSource _input;
         IAimLockProvider _aimLock;
-        float _pitch;
-        float _verticalVelocity;
-        Vector3 _horizontalVelocity;
         bool _cursorLocked;
-        bool _isBoosting;
-        bool _isHovering;
-        float _airborneTime;
-        bool _boostWasActive;
-        float _boostLockUntil;
-        float _landingStunUntil;
-        bool _wasGrounded = true;
+        float _pitch;
 
-        // Legacy / HUD names
-        public float JumpBoostFuelNormalized => jumpBoostFuel.Normalized;
-        public float DashJetFuelNormalized => dashJetFuel.Normalized;
-        public bool IsJumpBoostActive => _isHovering || jumpBoostFuel.RecentlySpent;
-        public bool IsDashJetActive => _isBoosting || dashJetFuel.RecentlySpent;
-        public bool IsDashing => _isBoosting;
-        public bool IsHovering => _isHovering;
+        Vector3 _horizontalVelocity;
+        float _verticalVelocity;
+        float _boost = GaugeMax;
+        bool _overheated;
+
+        bool _isDashing;
+        float _dashTime;
+        float _dashSpent;
+        Vector3 _dashDir;
+        bool _dashNeedsRelease;
+
+        bool _jumpEngaged;
+        bool _jumpThrusting;
+        float _carryTimer;
+        bool _jumpedThisAir;
+
+        bool _wasGrounded = true;
+        float _airTime;
+        float _lastFallSpeed;
+        float _stunUntil;
+        float _regenLockUntil;
+        bool _prevDashHeld;
+        bool _prevJumpHeld;
+        float _stepDistance;
+
+        /// <summary>Walking footfall. Arg: 0..1 relative to walk speed.</summary>
+        public event Action<float> Footstep;
+        /// <summary>Touchdown after a jump / fall. Arg: 0..1 impact.</summary>
+        public event Action<float> Landed;
+        /// <summary>Dash ended on the ground (brace into stun). Arg: 0..1 dash length.</summary>
+        public event Action<float> DashBraked;
+        public event Action Overheated;
+
+        public float BoostNormalized => Mathf.Clamp01(_boost / GaugeMax);
+        public bool UsesSharedBoostGauge => true;
+        public bool IsOverheated => _overheated;
+        public bool IsStunned => Time.time < _stunUntil;
+        public float StunRemaining => Mathf.Max(0f, _stunUntil - Time.time);
+        public bool IsJumpThrusting => _jumpThrusting;
+        public float WalkSpeed => KmhToUnits(walkSpeedKmh);
+
+        // Legacy names (FuelGaugeHud / older callers) — both map to the shared gauge.
+        public float JumpBoostFuelNormalized => BoostNormalized;
+        public float DashJetFuelNormalized => BoostNormalized;
+        public bool IsJumpBoostActive => _jumpThrusting;
+        public bool IsDashJetActive => _isDashing;
+        public bool IsDashing => _isDashing;
+        public bool IsHovering => _jumpThrusting;
         public bool IsGrounded => _controller != null && _controller.isGrounded;
         public Vector3 PlanarVelocity => new Vector3(_horizontalVelocity.x, 0f, _horizontalVelocity.z);
         public float PlanarSpeed => PlanarVelocity.magnitude;
+
+        float KmhToUnits(float kmh) => kmh / 3.6f * worldScale;
+        static float CntToSeconds(float cnt) => cnt * SecondsPerCnt;
+        static float FramesToSeconds(float frames) => frames * SecondsPerCnt / FramesPerCnt;
 
         void Awake()
         {
@@ -201,8 +182,12 @@ namespace Robogee.Player
 
             ResolveInputSource();
             ResolveAimLock();
-            jumpBoostFuel.Clamp();
-            dashJetFuel.Clamp();
+        }
+
+        void Start()
+        {
+            ResolveAimLock();
+            SetCursorLock(lockCursorOnStart);
         }
 
         void ResolveAimLock()
@@ -217,12 +202,6 @@ namespace Robogee.Player
                     return;
                 }
             }
-        }
-
-        void Start()
-        {
-            ResolveAimLock();
-            SetCursorLock(lockCursorOnStart);
         }
 
         void ResolveInputSource()
@@ -270,90 +249,382 @@ namespace Robogee.Player
         void Update()
         {
             float dt = Time.deltaTime;
+            if (dt <= 0f)
+                return;
+
             UnitInputFrame frame = _input != null ? _input.Current : default;
 
             if (frame.ToggleCursorPressed)
                 SetCursorLock(!_cursorLocked);
 
-            if (_cursorLocked)
-                ApplyLook(frame);
-
             bool grounded = _controller.isGrounded;
-            if (!_wasGrounded && grounded)
-                _landingStunUntil = Time.time + landingStunSeconds;
+            if (grounded && !_wasGrounded)
+                HandleLanding();
+            if (grounded)
+            {
+                _airTime = 0f;
+                _jumpedThisAir = false;
+            }
+            else
+            {
+                _airTime += dt;
+            }
             _wasGrounded = grounded;
 
-            if (grounded)
-                _airborneTime = 0f;
-            else
-                _airborneTime += dt;
+            bool stunned = IsStunned;
+            if (_cursorLocked)
+                ApplyLook(frame, stunned, dt);
 
             Vector3 moveInput = frame.MovePlanar;
             if (moveInput.sqrMagnitude > 1f)
                 moveInput.Normalize();
 
-            bool stunned = Time.time < _landingStunUntil;
-            if (stunned)
-                moveInput *= landingMoveScale;
+            bool dashPressed = frame.DashHeld && !_prevDashHeld;
+            bool jumpPressed = frame.JumpPressed || (frame.JumpHeld && !_prevJumpHeld);
+            if (!frame.DashHeld)
+                _dashNeedsRelease = false;
 
-            HandleJump(grounded, stunned, frame);
-            HandleHover(grounded, dt, frame);
-            HandleBoost(moveInput, grounded, stunned, dt, frame);
-            IntegrateVelocity(moveInput, grounded, stunned, dt);
+            UpdateJump(frame, jumpPressed, stunned, dt);
+            UpdateDash(frame, dashPressed, moveInput, grounded, stunned, dt);
+            IntegrateHorizontal(moveInput, grounded, IsStunned, dt);
+            IntegrateVertical(grounded, dt);
 
-            if (!_isHovering)
-                jumpBoostFuel.TickRegen(dt);
-            if (!_isBoosting && Time.time >= _boostLockUntil)
-                dashJetFuel.TickRegen(dt);
+            if (!grounded)
+                _lastFallSpeed = Mathf.Max(0f, -_verticalVelocity);
 
-            jumpBoostFuel.Clamp();
-            dashJetFuel.Clamp();
+            Vector3 motion = _horizontalVelocity;
+            motion.y = _verticalVelocity;
+            _controller.Move(motion * dt);
+
+            UpdateGauge(frame, grounded, dt);
+            UpdateFootsteps(grounded, IsStunned, dt);
+
+            _prevDashHeld = frame.DashHeld;
+            _prevJumpHeld = frame.JumpHeld;
         }
 
-        void OnGUI()
+        bool CanUseBoost(bool stunned) => !_overheated && !stunned && _boost > 0f;
+
+        bool Drain(float amount)
         {
-            if (!showFuelOverlay)
+            _boost -= amount;
+            if (_boost > 0f)
+                return true;
+            _boost = 0f;
+            TriggerOverheat();
+            return false;
+        }
+
+        void TriggerOverheat()
+        {
+            if (_overheated)
+                return;
+            _overheated = true;
+            if (_jumpEngaged)
+                _carryTimer = riseCarrySeconds;
+            _jumpEngaged = false;
+            _jumpThrusting = false;
+            Overheated?.Invoke();
+        }
+
+        void ApplyStun(float seconds)
+        {
+            _stunUntil = Mathf.Max(_stunUntil, Time.time + seconds);
+        }
+
+        void UpdateJump(UnitInputFrame frame, bool pressed, bool stunned, float dt)
+        {
+            if (pressed && CanUseBoost(stunned) && Drain(jumpIgnitePercent))
+            {
+                _jumpEngaged = true;
+                _jumpedThisAir = true;
+                _carryTimer = 0f;
+                float lift = KmhToUnits(jumpSpeedKmh) * jumpLiftOnPress;
+                if (_verticalVelocity < lift)
+                    _verticalVelocity = lift;
+            }
+
+            if (!frame.JumpHeld)
+            {
+                if (_jumpEngaged)
+                    _carryTimer = riseCarrySeconds;
+                _jumpEngaged = false;
+            }
+
+            bool thrust = _jumpEngaged && frame.JumpHeld && CanUseBoost(stunned);
+            if (thrust)
+            {
+                float rate = GaugeMax / Mathf.Max(0.05f, CntToSeconds(jumpFullTimeCnt));
+                thrust = Drain(rate * dt);
+            }
+
+            _jumpThrusting = thrust;
+            if (!thrust)
                 return;
 
-            const float w = 280f;
-            GUI.Box(new Rect(12, 12, w, 110), "MS EN");
-            GUI.Label(new Rect(24, 36, w - 24, 20),
-                $"Jump: {jumpBoostFuel.current:0}/{jumpBoostFuel.max:0}");
-            GUI.Label(new Rect(24, 56, w - 24, 20),
-                $"Boost: {dashJetFuel.current:0}/{dashJetFuel.max:0}");
-            string state = _isBoosting ? "BOOST"
-                : (Time.time < _boostLockUntil ? "OVERHEAT/LAG"
-                : (Time.time < _landingStunUntil ? "LAND STUN" : "WALK"));
-            GUI.Label(new Rect(24, 76, w - 24, 20), state);
+            float target = KmhToUnits(jumpSpeedKmh);
+            float accel = target / Mathf.Max(0.01f, jumpRampSeconds);
+            _verticalVelocity = Mathf.MoveTowards(_verticalVelocity, target, accel * dt);
         }
 
-        void ApplyLook(UnitInputFrame frame)
+        void UpdateDash(UnitInputFrame frame, bool pressed, Vector3 moveInput, bool grounded, bool stunned, float dt)
+        {
+            if (_isDashing)
+            {
+                if (!frame.DashHeld)
+                {
+                    EndDash(grounded, forced: false);
+                    return;
+                }
+
+                if (!CanUseBoost(stunned))
+                {
+                    EndDash(grounded, forced: true);
+                    return;
+                }
+
+                float rate = GaugeMax / Mathf.Max(0.05f, CntToSeconds(dashTimeCnt));
+                float amount = rate * dt;
+                bool ok = Drain(amount);
+                _dashSpent += amount;
+                _dashTime += dt;
+
+                if (!ok || (boostLimiterPercent > 0f && _dashSpent >= boostLimiterPercent))
+                {
+                    EndDash(grounded, forced: true);
+                    return;
+                }
+
+                SteerDash(moveInput, dt);
+                return;
+            }
+
+            if (!frame.DashHeld || _dashNeedsRelease)
+                return;
+            if (!CanUseBoost(stunned))
+                return;
+            if (!grounded && !allowAirDash)
+                return;
+            if (!Drain(dashIgnitePercent))
+                return;
+
+            _isDashing = true;
+            _dashTime = 0f;
+            _dashSpent = dashIgnitePercent;
+            _dashDir = LeverWorldDir(moveInput);
+        }
+
+        Vector3 LeverWorldDir(Vector3 moveInput)
+        {
+            Vector3 local = moveInput.sqrMagnitude > 0.01f ? moveInput.normalized : Vector3.forward;
+            Vector3 world = transform.TransformDirection(local);
+            world.y = 0f;
+            return world.sqrMagnitude > 0.0001f ? world.normalized : transform.forward;
+        }
+
+        void SteerDash(Vector3 moveInput, float dt)
+        {
+            Vector3 want = LeverWorldDir(moveInput);
+            _dashDir = Vector3.RotateTowards(_dashDir, want, dashSteerDegPerSec * Mathf.Deg2Rad * dt, 0f);
+        }
+
+        void EndDash(bool grounded, bool forced)
+        {
+            _isDashing = false;
+            if (forced)
+                _dashNeedsRelease = true;
+            if (regenLockAfterDashCnt > 0f)
+                _regenLockUntil = Time.time + CntToSeconds(regenLockAfterDashCnt);
+
+            // Ending in the air defers to landing stun — this is what makes グラップル work.
+            if (!grounded)
+                return;
+
+            float full = Mathf.Max(0.05f, CntToSeconds(dashTimeCnt));
+            float t = Mathf.Clamp01(_dashTime / full);
+            ApplyStun(FramesToSeconds(Mathf.Lerp(dashStunMinFrames, dashStunMaxFrames, t)));
+            DashBraked?.Invoke(Mathf.Lerp(0.4f, 1f, t));
+        }
+
+        void HandleLanding()
+        {
+            if (_airTime < landingMinAirSeconds && !_jumpedThisAir)
+                return;
+
+            float maxFall = Mathf.Max(0.01f, KmhToUnits(maxFallSpeedKmh));
+            float impact = Mathf.Clamp01(_lastFallSpeed / maxFall);
+
+            _jumpEngaged = false;
+            _jumpThrusting = false;
+            _carryTimer = 0f;
+
+            // 着地キャン: still dashing at touchdown → no landing stun, the dash carries on.
+            if (_isDashing)
+            {
+                Landed?.Invoke(impact * 0.5f);
+                return;
+            }
+
+            float t = Mathf.InverseLerp(CntToSeconds(smallJumpAirCnt), CntToSeconds(bigJumpAirCnt), _airTime);
+            float frames = Mathf.Lerp(stunFrames, bigJumpStunFrames, t);
+            if (_overheated)
+                frames += overheatLandingExtraFrames;
+            ApplyStun(FramesToSeconds(frames));
+            Landed?.Invoke(Mathf.Max(impact, t));
+        }
+
+        void IntegrateHorizontal(Vector3 moveInput, bool grounded, bool stunned, float dt)
+        {
+            Vector3 planar = PlanarVelocity;
+
+            if (_isDashing)
+            {
+                float dashSpeed = KmhToUnits(dashSpeedKmh);
+                float accel = dashSpeed / Mathf.Max(0.01f, dashAccelSeconds);
+                planar = Vector3.MoveTowards(planar, _dashDir * dashSpeed, accel * dt);
+            }
+            else if (stunned)
+            {
+                planar = Vector3.MoveTowards(planar, Vector3.zero, stunBrakeDecel * dt);
+            }
+            else
+            {
+                Vector3 wish = transform.TransformDirection(moveInput);
+                wish.y = 0f;
+                if (wish.sqrMagnitude > 1f)
+                    wish.Normalize();
+
+                float walk = WalkSpeed;
+                if (grounded)
+                {
+                    Vector3 desired = wish * walk;
+                    bool accelerating = desired.sqrMagnitude > 0.0001f && planar.magnitude <= walk + 0.01f;
+                    float rate = accelerating
+                        ? walk / Mathf.Max(0.01f, walkAccelSeconds)
+                        : walk / Mathf.Max(0.01f, walkStopSeconds);
+                    planar = Vector3.MoveTowards(planar, desired, rate * dt);
+                }
+                else
+                {
+                    // Jump inertia carries; the lever only nudges up to walk speed.
+                    float before = planar.magnitude;
+                    if (wish.sqrMagnitude > 0.0001f)
+                    {
+                        planar += wish * (walk / Mathf.Max(0.01f, airSteerSeconds)) * dt;
+                        float cap = Mathf.Max(before, walk);
+                        if (planar.magnitude > cap)
+                            planar = planar.normalized * cap;
+                    }
+                    planar = Vector3.MoveTowards(planar, Vector3.zero, airDrag * dt);
+                }
+            }
+
+            _horizontalVelocity = planar;
+        }
+
+        void IntegrateVertical(bool grounded, float dt)
+        {
+            if (_jumpThrusting)
+            {
+                // Velocity already driven in UpdateJump.
+            }
+            else if (_isDashing && !grounded)
+            {
+                _verticalVelocity = Mathf.MoveTowards(_verticalVelocity, 0f, Mathf.Abs(fallGravity) * dt);
+                _verticalVelocity += fallGravity * airDashGravityScale * dt;
+            }
+            else if (_carryTimer > 0f && _verticalVelocity > 0f)
+            {
+                float decel = KmhToUnits(jumpSpeedKmh) / Mathf.Max(0.01f, riseCarrySeconds);
+                _verticalVelocity = Mathf.MoveTowards(_verticalVelocity, 0f, decel * dt);
+                _carryTimer -= dt;
+            }
+            else
+            {
+                _carryTimer = 0f;
+                _verticalVelocity += fallGravity * dt;
+            }
+
+            float maxFall = KmhToUnits(maxFallSpeedKmh);
+            if (_verticalVelocity < -maxFall)
+                _verticalVelocity = -maxFall;
+
+            if (grounded && _verticalVelocity < 0f)
+                _verticalVelocity = groundedStickForce;
+        }
+
+        void UpdateGauge(UnitInputFrame frame, bool grounded, float dt)
+        {
+            if (_overheated)
+            {
+                _boost += GaugeMax / Mathf.Max(0.05f, CntToSeconds(overheatRecoverCnt)) * dt;
+                if (_boost >= GaugeMax)
+                {
+                    _boost = GaugeMax;
+                    _overheated = false;
+                }
+                return;
+            }
+
+            // Regen only once both pedals are fully back up.
+            if (frame.DashHeld || frame.JumpHeld || _isDashing || _jumpThrusting)
+                return;
+            if (Time.time < _regenLockUntil)
+                return;
+
+            float rate = GaugeMax / Mathf.Max(0.05f, CntToSeconds(regenFullCnt));
+            if (!grounded)
+                rate *= airRegenScale;
+            _boost = Mathf.Min(GaugeMax, _boost + rate * dt);
+        }
+
+        void UpdateFootsteps(bool grounded, bool stunned, float dt)
+        {
+            float speed = PlanarSpeed;
+            float walk = Mathf.Max(0.01f, WalkSpeed);
+            if (!grounded || _isDashing || stunned || speed < walk * 0.25f)
+            {
+                _stepDistance = strideMeters * 0.6f;
+                return;
+            }
+
+            _stepDistance += speed * dt;
+            if (_stepDistance < strideMeters)
+                return;
+            _stepDistance -= strideMeters;
+            Footstep?.Invoke(Mathf.Clamp01(speed / walk));
+        }
+
+        void ApplyLook(UnitInputFrame frame, bool stunned, float dt)
         {
             if (_aimLock == null)
                 ResolveAimLock();
 
+            // Red lock: auto-face the target, manual turning is disabled (as in 絆).
             if (_aimLock != null && _aimLock.TryGetLockedAimPoint(out Vector3 aimPoint))
             {
-                ApplyLockLook(aimPoint);
+                ApplyLockLook(aimPoint, dt);
                 return;
             }
 
-            float lookX = frame.LookX * lookSensitivity;
-            float lookY = frame.LookY * lookSensitivity;
-
-            float yawScale = _isBoosting ? turnResponsiveness * 0.55f : turnResponsiveness;
-            if (Time.time < _landingStunUntil)
-                yawScale *= 0.45f;
-            transform.Rotate(0f, lookX * yawScale, 0f);
+            if (!stunned || allowTurnWhileStunned)
+            {
+                float maxYaw = turnRpm * 6f * dt;
+                float yaw = Mathf.Clamp(frame.LookX * lookSensitivity, -maxYaw, maxYaw);
+                transform.Rotate(0f, yaw, 0f);
+            }
 
             if (cameraPivot == null)
                 return;
 
-            _pitch = Mathf.Clamp(_pitch - lookY, minPitch, maxPitch);
+            if (allowManualPitch)
+                _pitch = Mathf.Clamp(_pitch - frame.LookY * lookSensitivity, -manualPitchLimit, manualPitchLimit);
+            else
+                _pitch = Mathf.Lerp(_pitch, 0f, 1f - Mathf.Exp(-pitchReturnSpeed * dt));
             cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
 
-        void ApplyLockLook(Vector3 aimPoint)
+        void ApplyLockLook(Vector3 aimPoint, float dt)
         {
             Vector3 eye = cameraPivot != null
                 ? cameraPivot.position
@@ -362,7 +633,6 @@ namespace Robogee.Player
             if (to.sqrMagnitude < 0.0001f)
                 return;
 
-            float dt = Time.deltaTime;
             float t = 1f - Mathf.Exp(-lockOnTurnSpeed * dt);
 
             float targetYaw = Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg;
@@ -374,190 +644,9 @@ namespace Robogee.Player
 
             Vector3 local = Quaternion.Inverse(transform.rotation) * to;
             float targetPitch = -Mathf.Atan2(local.y, local.z) * Mathf.Rad2Deg;
-            targetPitch = Mathf.Clamp(targetPitch, minPitch, maxPitch);
+            targetPitch = Mathf.Clamp(targetPitch, -lockPitchLimit, lockPitchLimit);
             _pitch = Mathf.Lerp(_pitch, targetPitch, t);
             cameraPivot.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
-        }
-
-        void HandleJump(bool grounded, bool stunned, UnitInputFrame frame)
-        {
-            if (!grounded || stunned || !frame.JumpPressed)
-                return;
-
-            if (requireJumpFuel)
-            {
-                if (!jumpBoostFuel.TrySpend(jumpFuelCost))
-                    return;
-            }
-            else
-            {
-                jumpBoostFuel.TrySpend(jumpFuelCost);
-            }
-
-            _verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
-            _airborneTime = 0f;
-        }
-
-        void HandleHover(bool grounded, float dt, UnitInputFrame frame)
-        {
-            _isHovering = false;
-            if (!enableHover || grounded)
-                return;
-            if (_airborneTime < hoverArmDelay || !frame.JumpHeld)
-                return;
-
-            jumpBoostFuel.SpendUpTo(hoverFuelPerSecond, dt, out float spent);
-            if (spent <= 0f)
-                return;
-
-            _isHovering = true;
-            _verticalVelocity = Mathf.MoveTowards(
-                _verticalVelocity,
-                hoverAscendSpeed,
-                hoverVerticalAcceleration * dt);
-        }
-
-        void HandleBoost(Vector3 moveInput, bool grounded, bool stunned, float dt, UnitInputFrame frame)
-        {
-            bool wasBoosting = _isBoosting;
-            _isBoosting = false;
-
-            if (stunned || Time.time < _boostLockUntil)
-            {
-                if (wasBoosting)
-                    BeginBoostRecovery(boostRecoverySeconds);
-                _boostWasActive = false;
-                return;
-            }
-
-            if (!frame.DashHeld)
-            {
-                if (wasBoosting || _boostWasActive)
-                    BeginBoostRecovery(boostRecoverySeconds);
-                _boostWasActive = false;
-                return;
-            }
-
-            if (!allowAirBoost && !grounded)
-                return;
-
-            if (!_boostWasActive)
-            {
-                if (!dashJetFuel.TrySpend(boostIgniteCost))
-                    return;
-                _boostWasActive = true;
-            }
-
-            dashJetFuel.SpendUpTo(boostFuelPerSecond, dt, out float spent);
-            if (spent <= 0f)
-            {
-                // EN empty → overheat (絆-like 使用不能)
-                dashJetFuel.PunishRegen(boostEmptyExtraDelay);
-                BeginBoostRecovery(boostOverheatSeconds);
-                _boostWasActive = false;
-                return;
-            }
-
-            _isBoosting = true;
-
-            Vector3 localDir = moveInput;
-            if (localDir.sqrMagnitude < 0.01f)
-            {
-                if (!boostForwardWhenNoInput)
-                    return;
-                localDir = Vector3.forward;
-            }
-
-            Vector3 wish = transform.TransformDirection(localDir);
-            wish.y = 0f;
-            if (wish.sqrMagnitude > 0.0001f)
-                wish.Normalize();
-
-            Vector3 target = wish * boostMaxSpeed;
-            _horizontalVelocity = Vector3.MoveTowards(
-                _horizontalVelocity,
-                target,
-                boostAcceleration * dt);
-
-            if (boostSteer > 0f && wish.sqrMagnitude > 0.01f)
-            {
-                float speed = _horizontalVelocity.magnitude;
-                Vector3 steered = Vector3.Lerp(
-                    _horizontalVelocity.normalized,
-                    wish,
-                    boostSteer * dt * 3.5f);
-                if (steered.sqrMagnitude > 0.0001f)
-                    _horizontalVelocity = steered.normalized * speed;
-            }
-        }
-
-        void BeginBoostRecovery(float seconds)
-        {
-            _boostLockUntil = Mathf.Max(_boostLockUntil, Time.time + seconds);
-        }
-
-        void IntegrateVelocity(Vector3 moveInput, bool grounded, bool stunned, float dt)
-        {
-            if (!_isBoosting)
-            {
-                Vector3 wish = transform.TransformDirection(moveInput);
-                wish.y = 0f;
-                if (wish.sqrMagnitude > 1f)
-                    wish.Normalize();
-
-                float control = grounded ? 1f : airControl;
-                if (stunned)
-                    control *= landingMoveScale;
-
-                Vector3 planar = _horizontalVelocity;
-                planar.y = 0f;
-
-                if (wish.sqrMagnitude > 0.001f && !stunned)
-                {
-                    Vector3 desired = wish * maxWalkSpeed;
-                    float align = planar.sqrMagnitude > 0.01f
-                        ? Vector3.Dot(planar.normalized, wish)
-                        : 1f;
-                    float accel = align < -0.2f ? brakeFriction : walkAcceleration;
-                    _horizontalVelocity = Vector3.MoveTowards(
-                        planar,
-                        desired,
-                        accel * control * dt);
-                }
-                else
-                {
-                    float friction = grounded ? coastFriction : coastFriction * 0.35f;
-                    if (stunned)
-                        friction *= 1.6f;
-                    _horizontalVelocity = Vector3.MoveTowards(
-                        planar,
-                        Vector3.zero,
-                        friction * Mathf.Max(0.2f, control) * dt);
-                }
-            }
-            else if (grounded)
-            {
-                float cap = Mathf.Min(_horizontalVelocity.magnitude, boostMaxSpeed);
-                if (_horizontalVelocity.sqrMagnitude > 0.0001f)
-                {
-                    _horizontalVelocity = Vector3.MoveTowards(
-                        _horizontalVelocity,
-                        _horizontalVelocity.normalized * cap,
-                        boostFriction * dt);
-                }
-            }
-
-            if (grounded && _verticalVelocity < 0f)
-                _verticalVelocity = groundedStickForce;
-
-            if (!_isHovering)
-                _verticalVelocity += gravity * dt;
-            else if (_verticalVelocity < hoverAscendSpeed)
-                _verticalVelocity += gravity * hoverGravityScale * dt;
-
-            Vector3 motion = _horizontalVelocity;
-            motion.y = _verticalVelocity;
-            _controller.Move(motion * dt);
         }
 
         void SetCursorLock(bool locked)
@@ -567,16 +656,64 @@ namespace Robogee.Player
             Cursor.visible = !locked;
         }
 
+        void OnGUI()
+        {
+            if (!showFuelOverlay)
+                return;
+
+            const float w = 280f;
+            GUI.Box(new Rect(12, 12, w, 96), "MS BOOST");
+            GUI.Label(new Rect(24, 36, w - 24, 20), $"Boost: {_boost:0}/{GaugeMax:0}");
+            string state = _overheated ? "OVERHEAT"
+                : IsStunned ? $"STUN {StunRemaining:0.00}s"
+                : _isDashing ? "DASH"
+                : _jumpThrusting ? "JUMP"
+                : "WALK";
+            GUI.Label(new Rect(24, 56, w - 24, 20), state);
+        }
+
+        [ContextMenu("絆プリセット/近距離（標準）")]
+        void PresetStandard() => ApplyPreset(108f, 210f, 2.3f, 175f, 10.6f, 36f, 3.5f, 1.7f, 0f, 0f);
+
+        [ContextMenu("絆プリセット/格闘（ショートダッシュ）")]
+        void PresetFighter() => ApplyPreset(111f, 236f, 4.4f, 186f, 12.0f, 33f, 3.0f, 1.4f, 25f, 1.0f);
+
+        [ContextMenu("絆プリセット/射撃・支援（重め）")]
+        void PresetHeavy() => ApplyPreset(100f, 187f, 2.4f, 162f, 10.3f, 45f, 7.5f, 1.8f, 0f, 0f);
+
+        void ApplyPreset(float walk, float dash, float dashCnt, float jump, float rpm, float stun,
+            float ohCnt, float jumpCnt, float limiter, float regenLockCnt)
+        {
+            walkSpeedKmh = walk;
+            dashSpeedKmh = dash;
+            dashTimeCnt = dashCnt;
+            jumpSpeedKmh = jump;
+            turnRpm = rpm;
+            stunFrames = stun;
+            overheatRecoverCnt = ohCnt;
+            jumpFullTimeCnt = jumpCnt;
+            boostLimiterPercent = limiter;
+            regenLockAfterDashCnt = regenLockCnt;
+#if UNITY_EDITOR
+            UnityEditor.EditorUtility.SetDirty(this);
+#endif
+        }
+
 #if UNITY_EDITOR
         void OnValidate()
         {
-            jumpBoostFuel.Clamp();
-            dashJetFuel.Clamp();
-            maxWalkSpeed = Mathf.Max(0f, maxWalkSpeed);
-            boostMaxSpeed = Mathf.Max(0f, boostMaxSpeed);
-            jumpHeight = Mathf.Max(0f, jumpHeight);
-            if (gravity >= 0f)
-                gravity = -28f;
+            worldScale = Mathf.Max(0.001f, worldScale);
+            walkSpeedKmh = Mathf.Max(0f, walkSpeedKmh);
+            dashSpeedKmh = Mathf.Max(0f, dashSpeedKmh);
+            jumpSpeedKmh = Mathf.Max(0f, jumpSpeedKmh);
+            dashTimeCnt = Mathf.Max(0.1f, dashTimeCnt);
+            jumpFullTimeCnt = Mathf.Max(0.1f, jumpFullTimeCnt);
+            regenFullCnt = Mathf.Max(0.1f, regenFullCnt);
+            overheatRecoverCnt = Mathf.Max(0.1f, overheatRecoverCnt);
+            turnRpm = Mathf.Max(0.1f, turnRpm);
+            bigJumpAirCnt = Mathf.Max(smallJumpAirCnt + 0.1f, bigJumpAirCnt);
+            if (fallGravity >= 0f)
+                fallGravity = -14f;
         }
 #endif
     }

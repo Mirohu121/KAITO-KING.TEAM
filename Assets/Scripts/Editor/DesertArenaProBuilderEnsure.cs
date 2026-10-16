@@ -19,6 +19,8 @@ namespace Robogee.EditorTools
         const string ScenePath = "Assets/Scenes/TestField.unity";
         const string MatDir = "Assets/_Project/Materials";
         const string PrefKey = "Robogee.DesertArena.v1";
+        // Bump when the layout changes so scenes saved with an older arena rebuild on open.
+        const string LayoutMarker = "Layout_v2_City";
 
         [InitializeOnLoadMethod]
         static void AutoEnsure()
@@ -60,7 +62,8 @@ namespace Robogee.EditorTools
             if (!scene.IsValid() || scene.path != ScenePath)
                 return;
 
-            if (GameObject.Find(RootName) != null)
+            var root = GameObject.Find(RootName);
+            if (root != null && root.transform.Find(LayoutMarker) != null)
             {
                 EditorPrefs.SetBool(PrefKey, true);
                 return;
@@ -78,36 +81,45 @@ namespace Robogee.EditorTools
             var rock = EnsureMat("DesertRockMat", new Color(0.42f, 0.32f, 0.24f));
             var cliff = EnsureMat("DesertCliffMat", new Color(0.55f, 0.40f, 0.28f));
             var dune = EnsureMat("DesertDuneMat", new Color(0.82f, 0.66f, 0.40f));
+            var concrete = EnsureMat("BuildingConcreteMat", new Color(0.66f, 0.63f, 0.58f));
+            var concreteDark = EnsureMat("BuildingDarkMat", new Color(0.46f, 0.45f, 0.43f));
+            var roof = EnsureMat("BuildingRoofMat", new Color(0.32f, 0.31f, 0.30f));
 
             var existing = GameObject.Find(RootName);
             if (existing != null)
                 Object.DestroyImmediate(existing);
 
             var root = new GameObject(RootName);
+            new GameObject(LayoutMarker).transform.SetParent(root.transform, false);
 
             // Playable sand floor — covers spawn lane Z=±8 with margin.
             Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(48f, 0.4f, 48f)),
                 root.transform, "SandFloor", new Vector3(0f, -0.2f, 0f), sand);
 
-            // Outer cliffs (keep fighters inside the bowl).
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(52f, 4f, 2.5f)),
-                root.transform, "Cliff_N", new Vector3(0f, 1.5f, 24f), cliff);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(52f, 4f, 2.5f)),
-                root.transform, "Cliff_S", new Vector3(0f, 1.5f, -24f), cliff);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(2.5f, 4f, 48f)),
-                root.transform, "Cliff_E", new Vector3(24f, 1.5f, 0f), cliff);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(2.5f, 4f, 48f)),
-                root.transform, "Cliff_W", new Vector3(-24f, 1.5f, 0f), cliff);
+            // Outer cliffs — taller than a full boost jump (~7m) so nobody hops out.
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(52f, 14f, 2.5f)),
+                root.transform, "Cliff_N", new Vector3(0f, 6.8f, 24f), cliff);
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(52f, 14f, 2.5f)),
+                root.transform, "Cliff_S", new Vector3(0f, 6.8f, -24f), cliff);
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(2.5f, 14f, 48f)),
+                root.transform, "Cliff_E", new Vector3(24f, 6.8f, 0f), cliff);
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(2.5f, 14f, 48f)),
+                root.transform, "Cliff_W", new Vector3(-24f, 6.8f, 0f), cliff);
 
-            // Side rocks — leave center duel lane open (X≈0).
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(4f, 2.2f, 5f)),
-                root.transform, "Rock_E1", new Vector3(9f, 1.0f, 4f), rock);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(3.2f, 1.6f, 3.5f)),
-                root.transform, "Rock_E2", new Vector3(11f, 0.7f, -6f), rock);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(4.5f, 2.4f, 4f)),
-                root.transform, "Rock_W1", new Vector3(-10f, 1.1f, -3f), rock);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(3f, 1.8f, 6f)),
-                root.transform, "Rock_W2", new Vector3(-8.5f, 0.8f, 7f), rock);
+            // Ruined city blocks. Units are 1.8m = an 18m MS, so 12m here reads as a 120m tower.
+            // Point-symmetric around the origin so both spawns (0, ±8) get the same cover;
+            // the straight lane between spawns stays open.
+            var city = new GameObject("City").transform;
+            city.SetParent(root.transform, false);
+
+            BuildingPair(city, "Tower_A", 10f, 10f, new Vector3(5f, 12f, 5f), concreteDark, roof, tower: true);
+            BuildingPair(city, "Tower_B", -11f, 8f, new Vector3(4f, 10f, 6f), concrete, roof, tower: true);
+            BuildingPair(city, "Mid_Center", 7f, 1f, new Vector3(4f, 6f, 6f), concrete, roof, tower: false);
+            BuildingPair(city, "Mid_Back", -3.5f, 15f, new Vector3(6f, 5f, 4f), concreteDark, roof, tower: false);
+            BuildingPair(city, "Mid_Flank", 19f, 2f, new Vector3(4f, 7f, 7f), concrete, roof, tower: false);
+            BuildingPair(city, "Low_Flank", 13.5f, -1f, new Vector3(3f, 4.5f, 4f), concreteDark, roof, tower: false);
+            BuildingPair(city, "Block_Lane", 3.5f, -3.5f, new Vector3(2.5f, 2.5f, 3f), rock, null, tower: false);
+            BuildingPair(city, "Block_Spawn", 5f, 9f, new Vector3(3f, 2.5f, 2.5f), rock, null, tower: false);
 
             // Low dunes at corners (visual wilderness, not blocking spawns).
             Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(7f, 1.2f, 7f)),
@@ -122,12 +134,6 @@ namespace Robogee.EditorTools
             Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(7f, 1.3f, 7f)),
                 root.transform, "Dune_SW", new Vector3(-16f, 0.4f, -16f), dune,
                 Quaternion.Euler(0f, 30f, -7f));
-
-            // Mid-field cover rocks (still clear of exact spawn Z=±8 at X=0).
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(2.4f, 1.4f, 2.4f)),
-                root.transform, "Rock_MidE", new Vector3(5.5f, 0.6f, 0.5f), rock);
-            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, new Vector3(2.2f, 1.2f, 2.8f)),
-                root.transform, "Rock_MidW", new Vector3(-6f, 0.5f, -1f), rock);
 
             // Soften old flat Ground so it doesn't fight the new floor.
             var ground = GameObject.Find("Ground");
@@ -156,6 +162,47 @@ namespace Robogee.EditorTools
             EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
             EditorSceneManager.SaveOpenScenes();
             AssetDatabase.SaveAssets();
+        }
+
+        static void BuildingPair(Transform parent, string name, float x, float z, Vector3 size,
+            Material body, Material roof, bool tower)
+        {
+            Building(parent, name + "_1", new Vector3(x, 0f, z), size, body, roof, tower);
+            Building(parent, name + "_2", new Vector3(-x, 0f, -z), size, body, roof, tower);
+        }
+
+        static void Building(Transform parent, string name, Vector3 groundPos, Vector3 size,
+            Material body, Material roof, bool tower)
+        {
+            var holder = new GameObject(name).transform;
+            holder.SetParent(parent, false);
+            holder.position = groundPos;
+
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, size),
+                holder, "Body", groundPos + Vector3.up * (size.y * 0.5f), body);
+
+            if (roof == null)
+                return;
+
+            // Cornice slab so the silhouette reads as a building, not a crate.
+            var cornice = new Vector3(size.x + 0.3f, 0.25f, size.z + 0.3f);
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, cornice),
+                holder, "Roof", groundPos + Vector3.up * (size.y + 0.125f), roof);
+
+            if (!tower)
+                return;
+
+            // Floor bands every ~3m and a rooftop penthouse.
+            for (float y = 3f; y < size.y - 1f; y += 3f)
+            {
+                var band = new Vector3(size.x + 0.08f, 0.35f, size.z + 0.08f);
+                Place(ShapeGenerator.GenerateCube(PivotLocation.Center, band),
+                    holder, "Band", groundPos + Vector3.up * y, roof);
+            }
+
+            var penthouse = new Vector3(size.x * 0.55f, size.y * 0.12f, size.z * 0.55f);
+            Place(ShapeGenerator.GenerateCube(PivotLocation.Center, penthouse),
+                holder, "Penthouse", groundPos + Vector3.up * (size.y + 0.25f + penthouse.y * 0.5f), body);
         }
 
         static void Place(ProBuilderMesh pb, Transform parent, string name, Vector3 pos, Material mat,
